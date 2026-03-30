@@ -1,0 +1,64 @@
+{{- if .Values.global.env | eq "production" }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-api
+  labels:
+    {{- include "ai-platform.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "ai-platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow ingress controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - port: 8000
+    # Allow Prometheus scraping
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - port: 8000
+  egress:
+    # DNS
+    - to: []
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # PostgreSQL
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: postgresql
+      ports:
+        - port: 5432
+    # Redis
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: redis
+      ports:
+        - port: 6379
+    # Qdrant
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: qdrant
+      ports:
+        - port: 6333
+    # HTTPS egress (OpenRouter API)
+    - to: []
+      ports:
+        - port: 443
+{{- end }}

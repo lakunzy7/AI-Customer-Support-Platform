@@ -1,0 +1,34 @@
+# Loki-stack Helm values for centralized logging
+# Install: helm install loki grafana/loki-stack -n monitoring -f values.yaml
+loki:
+  persistence:
+    enabled: true
+    size: 5Gi
+  config:
+    limits_config:
+      retention_period: 168h  # 7 days
+    schema_config:
+      configs:
+        - from: "2024-01-01"
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index:
+            prefix: index_
+            period: 24h
+
+promtail:
+  config:
+    clients:
+      - url: http://loki:3100/loki/api/v1/push
+    scrape_configs:
+      - job_name: kubernetes-pods
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_pod_container_name]
+            target_label: container

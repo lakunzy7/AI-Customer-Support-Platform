@@ -1,0 +1,68 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ai-platform-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: ai-platform.rules
+      rules:
+        # High error rate
+        - alert: HighErrorRate
+          expr: |
+            (
+              sum(rate(http_server_request_duration_seconds_count{http_status_code=~"5.."}[5m]))
+              /
+              sum(rate(http_server_request_duration_seconds_count[5m]))
+            ) > 0.05
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "High 5xx error rate ({{ $value | humanizePercentage }})"
+            description: "More than 5% of requests are returning 5xx errors."
+
+        # High latency
+        - alert: HighLatencyP95
+          expr: |
+            histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket[5m])) by (le))
+            > 2
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "P95 latency above 2s ({{ $value }}s)"
+
+        # Pod crashes
+        - alert: PodCrashLooping
+          expr: |
+            increase(kube_pod_container_status_restarts_total{namespace="ai-platform"}[15m]) > 3
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Pod {{ $labels.pod }} is crash-looping"
+
+        # LLM response time
+        - alert: LLMSlowResponse
+          expr: |
+            histogram_quantile(0.95, sum(rate(llm_request_duration_seconds_bucket[5m])) by (le))
+            > 10
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "LLM P95 latency above 10s"
+
+    - name: ai-platform.slo
+      rules:
+        # SLO recording rules — 99.5% availability target
+        - record: ai_platform:http_requests:error_ratio_5m
+          expr: |
+            sum(rate(http_server_request_duration_seconds_count{http_status_code=~"5.."}[5m]))
+            /
+            sum(rate(http_server_request_duration_seconds_count[5m]))
+        - record: ai_platform:http_requests:availability_5m
+          expr: 1 - ai_platform:http_requests:error_ratio_5m

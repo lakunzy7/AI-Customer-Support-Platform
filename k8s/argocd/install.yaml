@@ -1,0 +1,14 @@
+# ArgoCD installation values for Helm chart
+# Install with: helm install argocd argo/argo-cd -n argocd -f install.yaml
+server:
+  extraArgs:
+    - --insecure  # KIND only — no TLS termination at ArgoCD level
+  service:
+    type: NodePort
+    nodePortHttp: 30080
+
+configs:
+  params:
+    server.insecure: true
+  cm:
+    timeout.reconciliation: 30s
