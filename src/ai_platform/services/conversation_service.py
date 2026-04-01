@@ -38,8 +38,15 @@ class ConversationService:
         await self._session.flush()
         return msg
 
-    def get_history(self, conversation: Conversation) -> list[dict[str, str]]:
-        return [{"role": m.role, "content": m.content} for m in conversation.messages]
+    async def get_history(self, conversation_id: str) -> list[dict[str, str]]:
+        """Fetch message history for a conversation from DB."""
+        result = await self._session.execute(
+            select(Message)
+            .where(Message.conversation_id == conversation_id)
+            .order_by(Message.created_at)
+        )
+        messages = result.scalars().all()
+        return [{"role": m.role, "content": m.content} for m in messages]
 
     async def healthy(self) -> bool:
         try:

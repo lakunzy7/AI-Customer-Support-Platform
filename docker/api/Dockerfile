@@ -1,12 +1,12 @@
 ###############################################################################
-# Stage 1 — build dependencies
+# Stage 1 — install dependencies
 ###############################################################################
 FROM python:3.11-slim AS builder
 
 WORKDIR /build
 COPY pyproject.toml .
-RUN pip install --no-cache-dir build \
-    && pip wheel --no-cache-dir --wheel-dir /wheels -e .
+COPY src/ ./src/
+RUN pip install --no-cache-dir .
 
 ###############################################################################
 # Stage 2 — runtime
@@ -17,9 +17,8 @@ RUN groupadd -r appuser && useradd -r -g appuser -s /sbin/nologin appuser
 
 WORKDIR /app
 
-COPY --from=builder /wheels /wheels
-RUN pip install --no-cache-dir /wheels/*.whl && rm -rf /wheels
-
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/uvicorn
 COPY src/ ./src/
 
 ENV PYTHONUNBUFFERED=1 \

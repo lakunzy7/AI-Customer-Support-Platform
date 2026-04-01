@@ -50,7 +50,7 @@ async def chat(
     await conv_service.add_message(conv, "user", body.message)
 
     # Build messages for LLM
-    history = conv_service.get_history(conv)
+    history = await conv_service.get_history(conv.id)
     messages = [{"role": "system", "content": SYSTEM_PROMPT}, *history]
 
     try:

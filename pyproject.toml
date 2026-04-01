@@ -41,6 +41,9 @@ otel = [
     "opentelemetry-exporter-otlp>=1.27.0",
 ]
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/ai_platform"]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100
