@@ -73,99 +73,136 @@ By completing this project, mentees should be able to:
 | Component | Technology |
 |-----------|------------|
 | Secrets Management | HashiCorp Vault |
-| Basic Secrets | Kubernetes Secrets |
+| Secret Sync | External Secrets Operator |
+| Network Security | Kubernetes Network Policies |
+
+## Implementation Status
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| Phase 1 | Core Application + Docker | Done |
+| Phase 2 | Kubernetes + Helm | Done |
+| Phase 3 | CI/CD + GitOps | Done |
+| Phase 4 | Observability | Done |
+| Phase 5 | Security + MLOps | Done |
+
+- **81 files** across all phases
+- **15 tests passing** with **69% code coverage**
+- Python 3.11 | FastAPI | async throughout
 
 ## Project Structure
 
 ```
 Ai-systems/
-├── src/ai_platform/           # FastAPI application
-│   ├── main.py                # App entry point
-│   ├── config.py              # Pydantic Settings
-│   ├── api/                   # Route handlers (health, chat, rag)
-│   ├── schemas/               # Pydantic request/response models
-│   ├── services/              # LLM client, cache, RAG, conversation
-│   ├── models/                # SQLAlchemy ORM models
-│   ├── db/                    # Alembic migrations
-│   └── core/                  # Logging, telemetry, middleware
-├── tests/                     # Unit + integration tests
-├── docker/api/Dockerfile      # Multi-stage build
-├── docker-compose.yml         # Local dev stack
-├── helm/ai-platform/          # Helm umbrella chart
-├── k8s/                       # KIND config, namespaces, ArgoCD
-├── monitoring/                # Prometheus, Grafana, Loki
-├── vault/                     # Vault policies + init scripts
-├── scripts/                   # Helper scripts
-├── .github/workflows/         # CI, release, security scan
-├── docs/                      # Architecture, deployment, runbook
-├── Makefile                   # Developer automation
-└── pyproject.toml             # Python deps + tool config
+├── src/ai_platform/              # FastAPI application
+│   ├── main.py                   # App entry point with lifespan hooks
+│   ├── config.py                 # Pydantic Settings (all env vars)
+│   ├── dependencies.py           # FastAPI dependency injection
+│   ├── api/                      # Route handlers
+│   │   ├── health.py             # GET /healthz, GET /readyz
+│   │   ├── chat.py               # POST /v1/chat
+│   │   └── rag.py                # POST /v1/rag
+│   ├── schemas/                  # Pydantic request/response models
+│   ├── services/                 # Business logic
+│   │   ├── llm_client.py         # OpenRouter API client (chat + embeddings)
+│   │   ├── cache_service.py      # Redis caching (SHA-256 keys, TTL)
+│   │   ├── rag_service.py        # RAG pipeline (embed → search → LLM)
+│   │   └── conversation_service.py  # PostgreSQL conversation history
+│   ├── models/                   # SQLAlchemy ORM models
+│   ├── db/                       # Alembic migrations
+│   └── core/                     # Logging, telemetry, middleware
+├── tests/                        # Unit + integration tests (15 tests, 69% coverage)
+│   ├── test_health.py            # Health endpoint tests
+│   ├── test_chat_endpoint.py     # Chat API tests
+│   ├── test_llm_client.py        # LLM client tests
+│   └── test_cache_service.py     # Cache service tests
+├── docker/api/Dockerfile         # Multi-stage build, non-root user
+├── docker-compose.yml            # Local dev (API + Redis + PostgreSQL + Qdrant)
+├── docker-compose.override.yml   # Dev overrides (hot reload)
+├── helm/ai-platform/             # Helm umbrella chart
+│   ├── templates/api/            # Deployment, Service, HPA, PDB, Ingress, Canary, NetworkPolicy
+│   ├── templates/redis/          # Deployment + Service
+│   ├── templates/postgresql/     # StatefulSet + Service + PVC
+│   ├── templates/qdrant/         # StatefulSet + Service + PVC
+│   ├── values.yaml               # Defaults
+│   ├── values-dev.yaml           # KIND overrides
+│   └── values-prod.yaml          # Production overrides
+├── k8s/
+│   ├── kind/cluster-config.yaml  # 3-node KIND cluster
+│   ├── namespaces/               # Namespace + ResourceQuota manifests
+│   └── argocd/                   # ArgoCD app-of-apps pattern
+├── monitoring/
+│   ├── prometheus/               # Alert rules + SLO recording rules
+│   ├── grafana/dashboards/       # API overview JSON dashboard
+│   └── loki/                     # Loki-stack Helm values
+├── vault/                        # Policies, init script, External Secrets
+├── scripts/                      # KIND setup, port-forward, seed data
+├── .github/workflows/            # CI, release, security scan
+│   ├── ci.yml                    # lint → test → build → push to ghcr.io
+│   ├── release.yml               # Tag-triggered release
+│   └── security.yml              # Trivy + pip-audit
+├── docs/                         # Architecture, deployment guide, incident runbook
+├── Makefile                      # Developer automation
+└── pyproject.toml                # Python deps + tool config
 ```
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/healthz` | Liveness probe |
+| GET | `/readyz` | Readiness probe (checks DB, Redis, Qdrant) |
+| POST | `/v1/chat` | Chat with AI assistant (with conversation history) |
+| POST | `/v1/rag` | RAG query against FAQ knowledge base |
+| GET | `/docs` | Swagger UI (dev only) |
 
 ## DevOps Pipeline
 
 ### CI Pipeline
-1. Linting & testing
-2. Build Docker images
-3. Tag images (versioning)
-4. Push to container registry
+1. Linting & testing (ruff + pytest)
+2. Build Docker images (multi-stage)
+3. Tag images (Git SHA + latest)
+4. Push to ghcr.io container registry
+5. Security scanning (Trivy + pip-audit)
 
 ### CD Pipeline
-1. Deploy to Kubernetes
-2. Use Helm charts
-3. GitOps with ArgoCD
-
-## Observability
-
-### Metrics (Critical)
-
-Track the following:
-- **API latency** — response time per request
-- **Error rates** — 4xx/5xx responses
-- **CPU/memory usage** — resource consumption
-- **AI response time** — model inference latency
-
-### Logging
-- Centralized logging using **Loki**
-- Structured logs (**JSON** format)
-
-## AI-Specific DevOps (MLOps)
-
-### Model Versioning
-- Deploy **v1** and **v2** of the AI service
-- Route traffic between versions (canary/blue-green)
-
-### Rollbacks
-- Revert to previous model version on failure
-
-## Evaluation Metrics
-
-### System Performance
-
-| Metric | Target |
-|--------|--------|
-| Uptime | >= 99.5% |
-| API Latency (p95) | Low |
-| Error Rate | Minimal |
-
-### DevOps Efficiency
-
-| Metric | Description |
-|--------|-------------|
-| Deployment Frequency | How often deployments occur |
-| Rollback Success Rate | % of successful rollbacks |
-| MTTR | Mean time to recovery |
+1. ArgoCD watches Git repository
+2. Detects changes to Helm chart or values
+3. Auto-syncs to Kubernetes cluster
+4. Self-heals on drift
 
 ## Quick Start
 
+### Prerequisites
+- Python 3.11+
+- Docker & Docker Compose
+
+### Run Tests
+
 ```bash
-# Clone and setup
+# Create virtual environment and install deps
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+
+# Run tests
+pytest -v --cov=src/ai_platform --cov-report=term-missing
+```
+
+### Run Locally with Docker
+
+```bash
+# Copy env vars and set your OpenRouter API key
 cp .env.example .env
 # Edit .env with your OPENROUTER_API_KEY
 
-# Run locally with Docker
+# Start all services
 make docker-up
+
+# Run database migrations
 make migrate
+
+# Seed Qdrant with FAQ data
 make seed
 
 # Test endpoints
@@ -173,9 +210,59 @@ curl http://localhost:8000/healthz
 curl -X POST http://localhost:8000/v1/chat \
   -H "Content-Type: application/json" \
   -d '{"message": "What is your return policy?"}'
+
+curl -X POST http://localhost:8000/v1/rag \
+  -H "Content-Type: application/json" \
+  -d '{"question": "How do I reset my password?"}'
 ```
 
-## Documentation Deliverables
-- [Architecture](docs/architecture.md)
-- [Deployment Guide](docs/deployment-guide.md)
-- [Incident Runbook](docs/incident-runbook.md)
+### Deploy to KIND Cluster
+
+```bash
+make kind-up        # Create cluster + deploy
+make port-forward   # Access services locally
+make kind-down      # Tear down
+```
+
+## Test Coverage
+
+```
+15 tests passing — 69% overall coverage
+
+Module                              Coverage
+─────────────────────────────────────────────
+schemas/                            100%
+models/                             100%
+services/cache_service.py           100%
+services/llm_client.py              100%
+api/health.py                       100%
+core/middleware.py                   100%
+config.py                           100%
+api/chat.py                          81%
+main.py                              79%
+services/conversation_service.py     82%
+```
+
+## Make Commands
+
+```
+make help           Show all available commands
+make install        Install production dependencies
+make dev            Install development dependencies
+make lint           Run linters (ruff)
+make format         Auto-format code
+make test           Run tests with coverage
+make run            Run development server
+make docker-up      Start all services with docker-compose
+make docker-down    Stop all services
+make migrate        Run database migrations
+make seed           Seed Qdrant with sample FAQ data
+make kind-up        Create KIND cluster and deploy
+make kind-down      Delete KIND cluster
+make port-forward   Port-forward services from KIND
+```
+
+## Documentation
+- [Architecture](docs/architecture.md) — System overview, data flows, deployment models
+- [Deployment Guide](docs/deployment-guide.md) — Local, KIND, production, canary, monitoring setup
+- [Incident Runbook](docs/incident-runbook.md) — Alert response procedures and rollback steps
