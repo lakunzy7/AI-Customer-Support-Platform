@@ -6,6 +6,9 @@ class ChatRequest(BaseModel):
     conversation_id: str | None = Field(
         default=None, description="Existing conversation ID to continue"
     )
+    file_ids: list[str] = Field(
+        default_factory=list, description="IDs of uploaded files to include as context"
+    )
 
 
 class ChatResponse(BaseModel):

@@ -1,5 +1,6 @@
 import asyncio
 import json
+from pathlib import Path
 
 import httpx
 import redis.asyncio as redis
@@ -13,6 +14,11 @@ from ai_platform.schemas.chat import ChatRequest, ChatResponse
 from ai_platform.services.cache_service import CacheService
 from ai_platform.services.conversation_service import ConversationService
 from ai_platform.services.llm_client import LLMClient
+
+TEXT_EXTENSIONS = {
+    ".txt", ".md", ".csv", ".json", ".xml", ".yaml", ".yml",
+    ".py", ".js", ".ts", ".html", ".css", ".sql", ".sh", ".log",
+}
 
 router = APIRouter(prefix="/v1", tags=["chat"])
 logger = structlog.get_logger(__name__)
@@ -81,6 +87,28 @@ async def chat(
     # Build messages for LLM
     history = await conv_service.get_history(conv.id)
     messages = [{"role": "system", "content": SYSTEM_PROMPT}, *history]
+
+    # Attach file contents as context
+    if body.file_ids:
+        upload_dir = Path(settings.upload_dir)
+        file_context_parts = []
+        for fid in body.file_ids[:5]:  # max 5 files
+            matches = list(upload_dir.glob(f"{fid}.*"))
+            if not matches:
+                continue
+            fpath = matches[0]
+            ext = fpath.suffix.lower()
+            if ext in TEXT_EXTENSIONS:
+                try:
+                    text = fpath.read_text(errors="replace")[:8000]
+                    file_context_parts.append(f"[File: {fpath.name}]\n{text}")
+                except Exception:
+                    pass
+            else:
+                file_context_parts.append(f"[File: {fpath.name} ({ext} binary file attached)]")
+        if file_context_parts:
+            file_context = "\n\n".join(file_context_parts)
+            messages.insert(1, {"role": "user", "content": f"Attached files:\n\n{file_context}"})
 
     try:
         reply = await llm.chat(messages)

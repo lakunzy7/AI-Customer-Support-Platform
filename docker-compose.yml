@@ -11,6 +11,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       QDRANT_HOST: qdrant
       QDRANT_PORT: "6333"
+    volumes:
+      - uploads_data:/tmp/ai-platform-uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -65,3 +67,4 @@ volumes:
   pg_data:
   redis_data:
   qdrant_data:
+  uploads_data:

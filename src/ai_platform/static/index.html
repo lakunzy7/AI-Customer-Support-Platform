@@ -542,6 +542,95 @@
         .mic-btn.unsupported { display: none; }
         .mic-btn svg { width: 18px; height: 18px; }
 
+        /* Attach Button */
+        .attach-btn {
+            width: 40px;
+            height: 40px;
+            background: transparent;
+            border: 1px solid #30363d;
+            border-radius: 10px;
+            color: #8b949e;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .attach-btn:hover { border-color: #58a6ff; color: #58a6ff; }
+        .attach-btn svg { width: 18px; height: 18px; }
+
+        /* File Preview Bar */
+        .file-preview-bar {
+            max-width: 800px;
+            margin: 0 auto 8px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .file-preview-bar:empty { display: none; }
+
+        .file-chip {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: #1c2128;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 4px 10px;
+            font-size: 12px;
+            color: #c9d1d9;
+            animation: fadeIn 0.2s ease;
+        }
+
+        .file-chip-icon { color: #58a6ff; font-size: 14px; }
+
+        .file-chip-name {
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .file-chip-size { color: #484f58; }
+
+        .file-chip-remove {
+            background: none;
+            border: none;
+            color: #8b949e;
+            cursor: pointer;
+            font-size: 14px;
+            padding: 0 2px;
+            line-height: 1;
+        }
+
+        .file-chip-remove:hover { color: #f85149; }
+
+        /* File attachments in messages */
+        .message-files {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 8px;
+        }
+
+        .message-file-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: #1c2128;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 3px 8px;
+            font-size: 11px;
+            color: #58a6ff;
+            text-decoration: none;
+        }
+
+        .message-file-chip:hover { border-color: #58a6ff; }
+
         @keyframes pulse {
             0%, 100% { box-shadow: 0 0 0 0 rgba(248, 81, 73, 0.4); }
             50% { box-shadow: 0 0 0 8px rgba(248, 81, 73, 0); }
@@ -645,7 +734,14 @@
         </div>
 
         <div class="input-area">
+            <div class="file-preview-bar" id="filePreviewBar"></div>
+            <input type="file" id="fileInput" multiple hidden accept=".txt,.md,.csv,.json,.xml,.yaml,.yml,.py,.js,.ts,.html,.css,.sql,.sh,.log,.pdf,.png,.jpg,.jpeg,.gif,.webp" onchange="handleFileSelect(this)">
             <div class="input-container">
+                <button class="attach-btn" onclick="document.getElementById('fileInput').click()" title="Attach files">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+                    </svg>
+                </button>
                 <div class="input-wrapper">
                     <textarea id="messageInput" placeholder="Type your message..." rows="1"
                         onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
@@ -836,7 +932,7 @@
         function autoResize(el) {
             el.style.height = 'auto';
             el.style.height = Math.min(el.scrollHeight, 150) + 'px';
-            sendBtn.disabled = el.value.trim() === '' || isLoading;
+            sendBtn.disabled = (el.value.trim() === '' && pendingFiles.length === 0) || isLoading;
         }
 
         function handleKey(e) {
@@ -893,7 +989,7 @@
             });
         }
 
-        function addMessage(role, text, cached = false, animate = true) {
+        function addMessage(role, text, cached = false, animate = true, files = []) {
             const welcomeEl = document.getElementById('welcome');
             if (welcomeEl) welcomeEl.remove();
 
@@ -903,6 +999,14 @@
 
             const content = role === 'assistant' ? renderMarkdown(text) : escapeHtml(text);
 
+            let filesHtml = '';
+            if (files.length > 0) {
+                const chips = files.map(f =>
+                    `<a class="message-file-chip" href="/v1/files/${escapeHtml(f.file_id)}" target="_blank">&#128206; ${escapeHtml(f.filename)}</a>`
+                ).join('');
+                filesHtml = `<div class="message-files">${chips}</div>`;
+            }
+
             const div = document.createElement('div');
             div.className = `message ${role}`;
             if (!animate) div.style.animation = 'none';
@@ -910,6 +1014,7 @@
                 <div class="message-avatar">${avatar}</div>
                 <div class="message-content">
                     <div class="message-role">${label}${cachedBadge}</div>
+                    ${filesHtml}
                     <div class="message-text">${content}</div>
                 </div>`;
             chatArea.appendChild(div);
@@ -947,19 +1052,24 @@
         // ===== SEND =====
         async function sendMessage() {
             const text = input.value.trim();
-            if (!text || isLoading) return;
+            if ((!text && pendingFiles.length === 0) || isLoading) return;
 
             isLoading = true;
             sendBtn.disabled = true;
             input.value = '';
             input.style.height = 'auto';
 
-            addMessage('user', text);
+            const sentFiles = [...pendingFiles];
+            pendingFiles = [];
+            renderFilePreview();
+
+            addMessage('user', text || '(attached files)', false, true, sentFiles);
             showTyping();
 
             try {
-                const body = { message: text };
+                const body = { message: text || 'Please analyze the attached files.' };
                 if (conversationId) body.conversation_id = conversationId;
+                if (sentFiles.length > 0) body.file_ids = sentFiles.map(f => f.file_id);
 
                 const res = await fetch('/v1/chat', {
                     method: 'POST',
@@ -982,7 +1092,6 @@
 
                 // Refresh sidebar if this was a new conversation
                 if (wasNew) {
-                    // Small delay to let auto-title generate
                     setTimeout(loadConversations, 1500);
                 }
             } catch (err) {
@@ -990,9 +1099,70 @@
                 addMessage('assistant', 'Sorry, I could not reach the server. Please try again.');
             } finally {
                 isLoading = false;
-                sendBtn.disabled = input.value.trim() === '';
+                sendBtn.disabled = input.value.trim() === '' && pendingFiles.length === 0;
                 input.focus();
             }
+        }
+
+        // ===== FILE UPLOAD =====
+        let pendingFiles = []; // { file_id, filename, size, ext }
+        const filePreviewBar = document.getElementById('filePreviewBar');
+
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        async function handleFileSelect(inputEl) {
+            const files = Array.from(inputEl.files);
+            inputEl.value = '';
+
+            for (const file of files) {
+                if (pendingFiles.length >= 5) {
+                    alert('Maximum 5 files per message');
+                    break;
+                }
+
+                const formData = new FormData();
+                formData.append('file', file);
+
+                try {
+                    const res = await fetch('/v1/upload', { method: 'POST', body: formData });
+                    if (!res.ok) {
+                        const err = await res.json().catch(() => ({}));
+                        alert(err.detail || 'Upload failed');
+                        continue;
+                    }
+                    const data = await res.json();
+                    pendingFiles.push(data);
+                    renderFilePreview();
+                } catch (e) {
+                    alert('Upload failed: ' + e.message);
+                }
+            }
+            sendBtn.disabled = (input.value.trim() === '' && pendingFiles.length === 0) || isLoading;
+        }
+
+        function renderFilePreview() {
+            filePreviewBar.innerHTML = '';
+            pendingFiles.forEach((f, i) => {
+                const chip = document.createElement('div');
+                chip.className = 'file-chip';
+                chip.innerHTML = `
+                    <span class="file-chip-icon">&#128206;</span>
+                    <span class="file-chip-name">${escapeHtml(f.filename)}</span>
+                    <span class="file-chip-size">${formatFileSize(f.size)}</span>
+                    <button class="file-chip-remove" onclick="removeFile(${i})" title="Remove">&times;</button>
+                `;
+                filePreviewBar.appendChild(chip);
+            });
+        }
+
+        function removeFile(index) {
+            pendingFiles.splice(index, 1);
+            renderFilePreview();
+            sendBtn.disabled = (input.value.trim() === '' && pendingFiles.length === 0) || isLoading;
         }
 
         // ===== VOICE INPUT =====

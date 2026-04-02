@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     qdrant_port: int = 6333
     qdrant_collection: str = "faq_documents"
 
+    # File uploads
+    upload_dir: str = "/tmp/ai-platform-uploads"
+    max_upload_size_mb: int = 10
+
     # Server
     host: str = "0.0.0.0"
     port: int = 8000

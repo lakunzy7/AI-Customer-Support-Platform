@@ -13,7 +13,8 @@ RUN pip install --no-cache-dir .
 ###############################################################################
 FROM python:3.11-slim AS runtime
 
-RUN groupadd -r appuser && useradd -r -g appuser -s /sbin/nologin appuser
+RUN groupadd -r appuser && useradd -r -g appuser -s /sbin/nologin appuser \
+    && mkdir -p /tmp/ai-platform-uploads && chown appuser:appuser /tmp/ai-platform-uploads
 
 WORKDIR /app
 

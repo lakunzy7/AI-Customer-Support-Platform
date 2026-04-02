@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from ai_platform.api import chat, conversations, health, rag
+from ai_platform.api import chat, conversations, files, health, rag
 from ai_platform.config import settings
 from ai_platform.core.logging import setup_logging
 from ai_platform.core.middleware import RequestIDMiddleware, TimingMiddleware
@@ -47,6 +47,7 @@ app.add_middleware(RequestIDMiddleware)
 app.include_router(health.router)
 app.include_router(chat.router)
 app.include_router(conversations.router)
+app.include_router(files.router)
 app.include_router(rag.router)
 
 # Static files and chat UI
