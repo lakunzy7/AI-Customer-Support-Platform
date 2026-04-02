@@ -28,7 +28,7 @@ async def test_chat_returns_content(llm_client, mock_http_client):
     call_args = mock_http_client.post.call_args
     assert "/chat/completions" in call_args[0][0]
     payload = call_args[1]["json"]
-    assert payload["model"] == "anthropic/claude-sonnet-4-20250514"
+    assert payload["model"] == "llama-3.3-70b-versatile"
 
 
 @pytest.mark.asyncio

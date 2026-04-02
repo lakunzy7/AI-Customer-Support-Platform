@@ -38,15 +38,15 @@ spec:
               value: "{{ .Release.Name }}-qdrant"
             - name: QDRANT_PORT
               value: "6333"
-            - name: OPENROUTER_API_KEY
+            - name: LLM_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ .Release.Name }}-secrets
-                  key: openrouter-api-key
-            - name: OPENROUTER_BASE_URL
-              value: {{ .Values.api.openrouter.baseUrl | quote }}
-            - name: OPENROUTER_MODEL
-              value: {{ .Values.api.openrouter.model | quote }}
+                  key: llm-api-key
+            - name: LLM_BASE_URL
+              value: {{ .Values.api.llm.baseUrl | quote }}
+            - name: LLM_MODEL
+              value: {{ .Values.api.llm.model | quote }}
           livenessProbe:
             httpGet:
               path: /healthz

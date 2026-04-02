@@ -14,10 +14,10 @@ class Settings(BaseSettings):
     app_debug: bool = False
     app_log_level: str = "info"
 
-    # OpenRouter LLM
-    openrouter_api_key: str = ""
-    openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_model: str = "anthropic/claude-sonnet-4-20250514"
+    # LLM Provider (OpenAI-compatible — Groq, OpenRouter, etc.)
+    llm_api_key: str = ""
+    llm_base_url: str = "https://api.groq.com/openai/v1"
+    llm_model: str = "llama-3.3-70b-versatile"
 
     # PostgreSQL
     database_url: str = "postgresql+asyncpg://aiplatform:aiplatform@localhost:5432/aiplatform"

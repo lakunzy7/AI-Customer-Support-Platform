@@ -39,7 +39,7 @@ By completing this project, mentees should be able to:
 | Component | Technology |
 |-----------|------------|
 | API Gateway | FastAPI |
-| LLM Service | OpenRouter (Cloud LLM) |
+| LLM Service | Groq (Cloud LLM) |
 | Caching | Redis |
 | Database | PostgreSQL |
 | Vector Store | Qdrant |
@@ -104,7 +104,7 @@ Ai-systems/
 │   │   └── rag.py                # POST /v1/rag
 │   ├── schemas/                  # Pydantic request/response models
 │   ├── services/                 # Business logic
-│   │   ├── llm_client.py         # OpenRouter API client (chat + embeddings)
+│   │   ├── llm_client.py         # Groq API client (chat + embeddings)
 │   │   ├── cache_service.py      # Redis caching (SHA-256 keys, TTL)
 │   │   ├── rag_service.py        # RAG pipeline (embed → search → LLM)
 │   │   └── conversation_service.py  # PostgreSQL conversation history
@@ -192,9 +192,9 @@ pytest -v --cov=src/ai_platform --cov-report=term-missing
 ### Run Locally with Docker
 
 ```bash
-# Copy env vars and set your OpenRouter API key
+# Copy env vars and set your Groq API key
 cp .env.example .env
-# Edit .env with your OPENROUTER_API_KEY
+# Edit .env with your LLM_API_KEY (get one at https://console.groq.com/keys)
 
 # Start all services
 make docker-up

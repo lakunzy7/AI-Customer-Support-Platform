@@ -10,10 +10,10 @@ api:
   logLevel: info
   service:
     type: ClusterIP
-  openrouter:
+  llm:
     apiKey: ""
-    baseUrl: "https://openrouter.ai/api/v1"
-    model: "anthropic/claude-sonnet-4-20250514"
+    baseUrl: "https://api.groq.com/openai/v1"
+    model: "llama-3.3-70b-versatile"
   resources:
     requests:
       cpu: 100m
@@ -44,7 +44,7 @@ api:
     enabled: false
     replicas: 1
     weight: 10  # % of traffic to canary
-    model: "anthropic/claude-sonnet-4-20250514"
+    model: "llama-3.3-70b-versatile"
     image:
       repository: ghcr.io/lakunzy/ai-platform
       tag: latest

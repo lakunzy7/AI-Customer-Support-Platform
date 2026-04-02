@@ -10,7 +10,7 @@ from ai_platform.config import Settings
 def settings():
     return Settings(
         app_env="test",
-        openrouter_api_key="test-key",
+        llm_api_key="test-key",
         database_url="sqlite+aiosqlite:///:memory:",
         redis_url="redis://localhost:6379/0",
     )

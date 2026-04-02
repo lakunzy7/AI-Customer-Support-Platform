@@ -26,7 +26,7 @@
                                        │
               External                 │
     ┌──────────────────────────┐       │
-    │    OpenRouter API        │◄──────┘
+    │      Groq API            │◄──────┘
     │  (LLM + Embeddings)      │
     └──────────────────────────┘
 ```
@@ -47,7 +47,7 @@
 
 | Service | Responsibility |
 |---------|---------------|
-| `LLMClient` | Async httpx client for OpenRouter (chat completions + embeddings) |
+| `LLMClient` | Async httpx client for Groq (chat completions + embeddings) |
 | `CacheService` | Redis cache with SHA-256 keys and configurable TTL |
 | `ConversationService` | PostgreSQL conversation history via async SQLAlchemy |
 | `RagService` | Full RAG pipeline: embed → Qdrant search → context-augmented LLM call |
@@ -69,7 +69,7 @@ Client → POST /v1/chat
   │     └── MISS ↓
   ├── 2. Load/create conversation in PostgreSQL
   ├── 3. Build message history
-  ├── 4. Call OpenRouter chat/completions API
+  ├── 4. Call Groq chat/completions API
   ├── 5. Cache response in Redis
   ├── 6. Persist assistant message to PostgreSQL
   └── 7. Return response + conversation_id
@@ -82,10 +82,10 @@ Client → POST /v1/rag
   ├── 1. Check Redis cache (SHA-256 of question)
   │     ├── HIT → return cached answer
   │     └── MISS ↓
-  ├── 2. Embed question via OpenRouter embeddings API
+  ├── 2. Embed question via Groq embeddings API
   ├── 3. Search Qdrant for top-k similar documents
   ├── 4. Build context from retrieved documents
-  ├── 5. Send augmented prompt to OpenRouter chat API
+  ├── 5. Send augmented prompt to Groq chat API
   ├── 6. Cache result in Redis
   └── 7. Return answer + source documents
 ```

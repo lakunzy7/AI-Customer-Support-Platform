@@ -57,7 +57,7 @@ spec:
               app.kubernetes.io/component: qdrant
       ports:
         - port: 6333
-    # HTTPS egress (OpenRouter API)
+    # HTTPS egress (Groq API)
     - to: []
       ports:
         - port: 443

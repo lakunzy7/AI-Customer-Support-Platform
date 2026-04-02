@@ -7,7 +7,7 @@
 | HighErrorRate | Critical | 5xx > 5% for 5min | Check pod logs + LLM status |
 | HighLatencyP95 | Warning | P95 > 2s for 5min | Check HPA + Redis cache |
 | PodCrashLooping | Critical | > 3 restarts in 15min | Check describe + previous logs |
-| LLMSlowResponse | Warning | LLM P95 > 10s for 5min | Check OpenRouter status |
+| LLMSlowResponse | Warning | LLM P95 > 10s for 5min | Check Groq status |
 
 ---
 
@@ -30,9 +30,9 @@ kubectl logs -n ai-platform -l app.kubernetes.io/component=api --tail=100 | grep
 curl http://localhost:8000/readyz
 # Expected: {"status":"ok","checks":{"database":"ok","redis":"ok","qdrant":"ok"}}
 
-# 4. Check if OpenRouter LLM provider is down
-curl -s https://openrouter.ai/api/v1/models \
-  -H "Authorization: Bearer $OPENROUTER_API_KEY" | head
+# 4. Check if Groq LLM provider is down
+curl -s https://api.groq.com/openai/v1/models \
+  -H "Authorization: Bearer $LLM_API_KEY" | head
 
 # 5. Check database connectivity
 kubectl exec -n ai-platform deploy/ai-platform-api -- python -c "
@@ -85,7 +85,7 @@ kubectl logs -n ai-platform -l app.kubernetes.io/component=api --tail=50 | grep 
 |-----------|--------|
 | Not enough replicas | Scale manually: `kubectl scale deploy/ai-platform-api -n ai-platform --replicas=5` |
 | Cold cache (after restart) | Will warm naturally — no action needed |
-| LLM is slow | Check OpenRouter status page |
+| LLM is slow | Check Groq status page |
 | HPA not scaling fast enough | Lower target thresholds in `values.yaml` → `api.autoscaling.targetCPU` |
 
 ---
@@ -116,7 +116,7 @@ kubectl get pod -n ai-platform <pod-name> -o jsonpath='{.status.containerStatuse
 | Root Cause | Action |
 |-----------|--------|
 | OOMKilled | Increase memory limits in Helm values → `api.resources.limits.memory` |
-| Config error | Check env vars — missing `OPENROUTER_API_KEY`, wrong `DATABASE_URL`, etc. |
+| Config error | Check env vars — missing `LLM_API_KEY`, wrong `DATABASE_URL`, etc. |
 | Readiness probe failing | Check dependency health (Redis, PostgreSQL, Qdrant pods) |
 | Image pull error | Verify image tag exists in ghcr.io registry |
 
@@ -130,8 +130,8 @@ kubectl get pod -n ai-platform <pod-name> -o jsonpath='{.status.containerStatuse
 ### Diagnosis
 
 ```bash
-# 1. Check OpenRouter API status
-curl -s https://openrouter.ai/api/v1/models | python -m json.tool | head -20
+# 1. Check Groq API status
+curl -s https://api.groq.com/openai/v1/models -H "Authorization: Bearer $LLM_API_KEY" | python -m json.tool | head -20
 
 # 2. Check if hitting rate limits (HTTP 429)
 kubectl logs -n ai-platform -l app.kubernetes.io/component=api --tail=50 | grep -i "rate\|429"
@@ -145,9 +145,9 @@ kubectl get deploy ai-platform-api -n ai-platform \
 
 | Root Cause | Action |
 |-----------|--------|
-| OpenRouter provider issue | Wait for recovery or switch model |
-| Rate limited | Reduce concurrency or upgrade OpenRouter plan |
-| Model is inherently slow | Switch to a faster model via Helm: `--set api.openrouter.model="faster-model"` |
+| Groq provider issue | Wait for recovery or switch model |
+| Rate limited | Reduce concurrency or upgrade Groq plan |
+| Model is inherently slow | Switch to a faster model via Helm: `--set api.llm.model="faster-model"` |
 
 ---
 

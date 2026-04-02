@@ -47,8 +47,8 @@ echo "==> Storing secrets..."
 kubectl exec -n vault vault-0 -- sh -c "
   export VAULT_TOKEN=$ROOT_TOKEN
   vault secrets enable -path=secret kv-v2 2>/dev/null || true
-  vault kv put secret/ai-platform/openrouter \
-    api-key=\${OPENROUTER_API_KEY:-changeme}
+  vault kv put secret/ai-platform/llm \
+    api-key=\${LLM_API_KEY:-changeme}
 "
 
 echo "==> Vault initialized. Root token saved to vault-keys.json"

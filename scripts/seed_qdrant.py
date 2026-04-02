@@ -12,10 +12,10 @@ from qdrant_client.models import Distance, PointStruct, VectorParams
 QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
 COLLECTION = os.getenv("QDRANT_COLLECTION", "faq_documents")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-EMBEDDING_MODEL = "openai/text-embedding-3-small"
-VECTOR_DIM = 1536
+LLM_API_KEY = os.getenv("LLM_API_KEY", "")
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.groq.com/openai/v1")
+EMBEDDING_MODEL = "nomic-embed-text"
+VECTOR_DIM = 768
 
 FAQ_DOCS = [
     {
@@ -70,13 +70,13 @@ FAQ_DOCS = [
 
 
 async def get_embeddings(texts: list[str]) -> list[list[float]]:
-    """Fetch embeddings from OpenRouter."""
+    """Fetch embeddings from LLM provider (Groq)."""
     async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(
-            f"{OPENROUTER_BASE_URL}/embeddings",
+            f"{LLM_BASE_URL}/embeddings",
             json={"model": EMBEDDING_MODEL, "input": texts},
             headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Authorization": f"Bearer {LLM_API_KEY}",
                 "Content-Type": "application/json",
             },
         )
@@ -103,8 +103,8 @@ async def main() -> None:
 
     # Embed all documents
     texts = [doc["text"] for doc in FAQ_DOCS]
-    if OPENROUTER_API_KEY:
-        print(f"Embedding {len(texts)} documents via OpenRouter...")
+    if LLM_API_KEY:
+        print(f"Embedding {len(texts)} documents via Groq...")
         embeddings = await get_embeddings(texts)
     else:
         # Fallback: use random vectors for local dev without API key

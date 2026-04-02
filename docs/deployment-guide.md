@@ -34,9 +34,9 @@ ruff format --check src/ tests/
 ## 2. Local Development (docker-compose)
 
 ```bash
-# Copy env vars and set your OpenRouter API key
+# Copy env vars and set your Groq API key
 cp .env.example .env
-# Edit .env — set OPENROUTER_API_KEY
+# Edit .env — set LLM_API_KEY (get one at https://console.groq.com/keys)
 
 # Start all services (API + PostgreSQL + Redis + Qdrant)
 make docker-up
@@ -195,7 +195,7 @@ helm upgrade ai-platform helm/ai-platform -n ai-platform \
 
 # Step 4: Full rollout (promote canary → stable)
 helm upgrade ai-platform helm/ai-platform -n ai-platform \
-  --set api.openrouter.model="anthropic/claude-sonnet-4-20250514" \
+  --set api.llm.model="llama-3.3-70b-versatile" \
   --set api.canary.enabled=false
 
 # Rollback if needed

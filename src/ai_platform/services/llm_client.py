@@ -7,13 +7,13 @@ logger = structlog.get_logger(__name__)
 
 
 class LLMClient:
-    """Async client for OpenRouter's OpenAI-compatible API."""
+    """Async client for OpenAI-compatible LLM APIs (Groq, OpenRouter, etc.)."""
 
     def __init__(self, http_client: httpx.AsyncClient, settings: Settings) -> None:
         self._client = http_client
-        self._base_url = settings.openrouter_base_url.rstrip("/")
-        self._api_key = settings.openrouter_api_key
-        self._model = settings.openrouter_model
+        self._base_url = settings.llm_base_url.rstrip("/")
+        self._api_key = settings.llm_api_key
+        self._model = settings.llm_model
 
     async def chat(
         self,
@@ -48,7 +48,7 @@ class LLMClient:
         await logger.ainfo("llm_response", tokens=data.get("usage", {}))
         return content
 
-    async def embed(self, text: str, *, model: str = "openai/text-embedding-3-small") -> list[float]:
+    async def embed(self, text: str, *, model: str = "nomic-embed-text") -> list[float]:
         """Get embedding vector for a text string."""
         response = await self._client.post(
             f"{self._base_url}/embeddings",
