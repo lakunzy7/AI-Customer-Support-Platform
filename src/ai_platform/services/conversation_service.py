@@ -48,6 +48,40 @@ class ConversationService:
         messages = result.scalars().all()
         return [{"role": m.role, "content": m.content} for m in messages]
 
+    async def list_conversations(self, limit: int = 50) -> list[Conversation]:
+        """Return recent conversations, newest first."""
+        result = await self._session.execute(
+            select(Conversation).order_by(Conversation.created_at.desc()).limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def get_conversation(self, conversation_id: str) -> Conversation | None:
+        result = await self._session.execute(
+            select(Conversation).where(Conversation.id == conversation_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def rename_conversation(self, conversation_id: str, title: str) -> Conversation | None:
+        conv = await self.get_conversation(conversation_id)
+        if conv:
+            conv.title = title
+            await self._session.flush()
+        return conv
+
+    async def delete_conversation(self, conversation_id: str) -> bool:
+        conv = await self.get_conversation(conversation_id)
+        if not conv:
+            return False
+        await self._session.delete(conv)
+        await self._session.flush()
+        return True
+
+    async def set_title(self, conversation_id: str, title: str) -> None:
+        conv = await self.get_conversation(conversation_id)
+        if conv and not conv.title:
+            conv.title = title[:200]
+            await self._session.flush()
+
     async def healthy(self) -> bool:
         try:
             await self._session.execute(select(1))

@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 import httpx
@@ -21,6 +22,29 @@ SYSTEM_PROMPT = (
     "Be concise, friendly, and accurate."
 )
 
+TITLE_PROMPT = "Summarize this conversation in 3-5 words as a short title. Reply with ONLY the title, nothing else."
+
+
+async def _generate_title(
+    llm: LLMClient,
+    conv_service: ConversationService,
+    db: AsyncSession,
+    conversation_id: str,
+    user_message: str,
+) -> None:
+    """Background task: generate a short title for a new conversation."""
+    try:
+        messages = [
+            {"role": "user", "content": user_message},
+            {"role": "user", "content": TITLE_PROMPT},
+        ]
+        title = await llm.chat(messages)
+        title = title.strip().strip('"').strip("'")[:200]
+        await conv_service.set_title(conversation_id, title)
+        await db.commit()
+    except Exception:
+        await logger.awarning("title_generation_failed", conversation_id=conversation_id)
+
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
@@ -35,14 +59,19 @@ async def chat(
     conv_service = ConversationService(db)
     llm = LLMClient(http_client, settings)
 
+    is_new_conversation = body.conversation_id is None
+
     # Check cache (only for new conversations / single messages)
-    if body.conversation_id is None:
+    if is_new_conversation:
         cached = await cache.get("chat", body.message)
         if cached:
             conv = await conv_service.get_or_create(None)
             await conv_service.add_message(conv, "user", body.message)
             await conv_service.add_message(conv, "assistant", cached)
             await db.commit()
+            asyncio.create_task(
+                _generate_title(llm, ConversationService(db), db, conv.id, body.message)
+            )
             return ChatResponse(conversation_id=conv.id, message=cached, cached=True)
 
     # Load or create conversation
@@ -63,7 +92,13 @@ async def chat(
     await db.commit()
 
     # Cache single-turn response
-    if body.conversation_id is None:
+    if is_new_conversation:
         await cache.set("chat", body.message, reply)
+
+    # Auto-generate title for new conversations
+    if is_new_conversation:
+        asyncio.create_task(
+            _generate_title(llm, ConversationService(db), db, conv.id, body.message)
+        )
 
     return ChatResponse(conversation_id=conv.id, message=reply)
