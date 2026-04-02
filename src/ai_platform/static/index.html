@@ -521,6 +521,32 @@
 
         .send-btn svg { width: 18px; height: 18px; }
 
+        /* Mic Button */
+        .mic-btn {
+            width: 40px;
+            height: 40px;
+            background: transparent;
+            border: 1px solid #30363d;
+            border-radius: 10px;
+            color: #8b949e;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .mic-btn:hover { border-color: #58a6ff; color: #58a6ff; }
+        .mic-btn.recording { background: #f8514922; border-color: #f85149; color: #f85149; animation: pulse 1.5s infinite; }
+        .mic-btn.unsupported { display: none; }
+        .mic-btn svg { width: 18px; height: 18px; }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(248, 81, 73, 0.4); }
+            50% { box-shadow: 0 0 0 8px rgba(248, 81, 73, 0); }
+        }
+
         .footer-text {
             text-align: center;
             font-size: 11px;
@@ -624,6 +650,14 @@
                     <textarea id="messageInput" placeholder="Type your message..." rows="1"
                         onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
                 </div>
+                <button class="mic-btn" id="micBtn" onclick="toggleVoice()" title="Voice input">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+                        <path d="M19 10v2a7 7 0 01-14 0v-2"/>
+                        <line x1="12" y1="19" x2="12" y2="23"/>
+                        <line x1="8" y1="23" x2="16" y2="23"/>
+                    </svg>
+                </button>
                 <button class="send-btn" id="sendBtn" onclick="sendMessage()" disabled>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
@@ -960,6 +994,82 @@
                 input.focus();
             }
         }
+
+        // ===== VOICE INPUT =====
+        const micBtn = document.getElementById('micBtn');
+        let recognition = null;
+        let isRecording = false;
+
+        function initVoice() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                micBtn.classList.add('unsupported');
+                return;
+            }
+
+            recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'en-US';
+
+            let finalTranscript = '';
+
+            recognition.onresult = (event) => {
+                let interim = '';
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const t = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalTranscript += t + ' ';
+                    } else {
+                        interim += t;
+                    }
+                }
+                input.value = finalTranscript + interim;
+                autoResize(input);
+            };
+
+            recognition.onerror = (event) => {
+                if (event.error !== 'aborted') {
+                    console.error('Speech error:', event.error);
+                }
+                stopRecording();
+            };
+
+            recognition.onend = () => {
+                if (isRecording) {
+                    // Auto-stopped, finalize
+                    stopRecording();
+                }
+            };
+        }
+
+        function toggleVoice() {
+            if (isRecording) {
+                stopRecording();
+            } else {
+                startRecording();
+            }
+        }
+
+        function startRecording() {
+            if (!recognition) return;
+            isRecording = true;
+            micBtn.classList.add('recording');
+            micBtn.title = 'Stop recording';
+            recognition.start();
+        }
+
+        function stopRecording() {
+            isRecording = false;
+            micBtn.classList.remove('recording');
+            micBtn.title = 'Voice input';
+            if (recognition) {
+                try { recognition.stop(); } catch (e) { /* ignore */ }
+            }
+            input.focus();
+        }
+
+        initVoice();
 
         // ===== INIT =====
         loadConversations();
