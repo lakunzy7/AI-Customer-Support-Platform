@@ -93,22 +93,42 @@ async def chat(
         upload_dir = Path(settings.upload_dir)
         file_context_parts = []
         for fid in body.file_ids[:5]:  # max 5 files
-            matches = list(upload_dir.glob(f"{fid}.*"))
+            matches = [p for p in upload_dir.glob(f"{fid}.*") if ".meta." not in p.name]
             if not matches:
                 continue
             fpath = matches[0]
             ext = fpath.suffix.lower()
+
+            # Get original filename from metadata
+            from ai_platform.api.files import get_file_meta
+            meta = get_file_meta(upload_dir, fid)
+            display_name = meta["filename"] if meta else fpath.name
+
             if ext in TEXT_EXTENSIONS:
                 try:
                     text = fpath.read_text(errors="replace")[:8000]
-                    file_context_parts.append(f"[File: {fpath.name}]\n{text}")
+                    file_context_parts.append(f"[File: {display_name}]\n{text}")
                 except Exception:
                     pass
+            elif ext == ".pdf":
+                try:
+                    import fitz  # PyMuPDF
+                    doc = fitz.open(str(fpath))
+                    pdf_text = ""
+                    for page in doc:
+                        pdf_text += page.get_text()
+                        if len(pdf_text) > 8000:
+                            break
+                    doc.close()
+                    pdf_text = pdf_text[:8000]
+                    file_context_parts.append(f"[File: {display_name}]\n{pdf_text}")
+                except Exception:
+                    file_context_parts.append(f"[File: {display_name} (PDF — could not extract text)]")
             else:
-                file_context_parts.append(f"[File: {fpath.name} ({ext} binary file attached)]")
+                file_context_parts.append(f"[File: {display_name} ({ext} binary file attached)]")
         if file_context_parts:
             file_context = "\n\n".join(file_context_parts)
-            messages.insert(1, {"role": "user", "content": f"Attached files:\n\n{file_context}"})
+            messages.insert(1, {"role": "user", "content": f"The user has attached the following files. Read and understand their contents:\n\n{file_context}"})
 
     try:
         reply = await llm.chat(messages)

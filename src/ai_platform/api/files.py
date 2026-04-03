@@ -1,4 +1,4 @@
-import os
+import json
 from pathlib import Path
 
 import structlog
@@ -45,8 +45,11 @@ async def upload_file(
     file_id = str(ULID())
     safe_name = f"{file_id}{ext}"
     file_path = upload_dir / safe_name
-
     file_path.write_bytes(content)
+
+    # Save metadata (original filename)
+    meta_path = upload_dir / f"{file_id}.meta.json"
+    meta_path.write_text(json.dumps({"filename": file.filename, "ext": ext, "size": len(content)}))
 
     await logger.ainfo("file_uploaded", file_id=file_id, name=file.filename, size=len(content))
 
@@ -58,6 +61,14 @@ async def upload_file(
     }
 
 
+def get_file_meta(upload_dir: Path, file_id: str) -> dict | None:
+    """Read metadata for an uploaded file."""
+    meta_path = upload_dir / f"{file_id}.meta.json"
+    if meta_path.exists():
+        return json.loads(meta_path.read_text())
+    return None
+
+
 @router.get("/files/{file_id}")
 async def get_file(
     file_id: str,
@@ -66,9 +77,12 @@ async def get_file(
     """Download a previously uploaded file."""
     upload_dir = Path(settings.upload_dir)
 
-    # Find file by ID prefix (ID + extension)
-    matches = list(upload_dir.glob(f"{file_id}.*"))
+    # Find file by ID prefix (ID + extension), excluding meta files
+    matches = [p for p in upload_dir.glob(f"{file_id}.*") if ".meta." not in p.name]
     if not matches:
         raise HTTPException(status_code=404, detail="File not found")
 
-    return FileResponse(str(matches[0]), filename=matches[0].name)
+    meta = get_file_meta(upload_dir, file_id)
+    download_name = meta["filename"] if meta else matches[0].name
+
+    return FileResponse(str(matches[0]), filename=download_name)
