@@ -4,14 +4,156 @@
 
 | Tool | Version | Purpose |
 |------|---------|---------|
+| Git | 2.x | Clone the repository |
 | Python | 3.11+ | Application runtime |
 | Docker | 24+ | Containerization |
+| Docker Compose | 2.x | Local multi-service orchestration |
 | kubectl | 1.28+ | Kubernetes CLI |
 | Helm | 3.x | Package manager |
 | KIND | 0.20+ | Local Kubernetes cluster |
 | gh | 2.x | GitHub CLI (optional) |
 
-## 1. Run Tests Locally
+## 1. Clone the Repository
+
+```bash
+git clone https://github.com/lakunzy7/AI-Customer-Support-Platform.git
+cd AI-Customer-Support-Platform
+```
+
+## 2. Get a Groq API Key
+
+1. Go to https://console.groq.com/keys
+2. Sign up (free) and create a new API key
+3. Copy the key — it starts with `gsk_`
+
+## 3. Configure Environment
+
+```bash
+# Copy the example env file
+cp .env.example .env
+
+# Edit .env and set your Groq API key
+# Replace the placeholder with your actual key:
+#   LLM_API_KEY=gsk_your-actual-key-here
+```
+
+Your `.env` should look like:
+```
+LLM_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxx
+LLM_BASE_URL=https://api.groq.com/openai/v1
+LLM_MODEL=llama-3.3-70b-versatile
+```
+
+## 4. Run with Docker Compose
+
+```bash
+# Start all services (API + PostgreSQL + Redis + Qdrant)
+docker compose up -d
+
+# Wait for services to be healthy (about 15 seconds)
+# Then verify everything is running
+docker compose ps
+
+# Check health
+curl http://localhost:8000/healthz
+# → {"status":"ok"}
+
+curl http://localhost:8000/readyz
+# → {"status":"ok","checks":{"database":"ok","redis":"ok","qdrant":"ok"}}
+```
+
+### Services started
+
+| Service | Port | URL |
+|---------|------|-----|
+| API + Web UI | 8000 | http://localhost:8000 |
+| PostgreSQL | 5432 | `postgresql://aiplatform:aiplatform@localhost:5432/aiplatform` |
+| Redis | 6379 | `redis://localhost:6379/0` |
+| Qdrant | 6333 | http://localhost:6333 |
+
+## 5. Open the Web UI
+
+Open your browser and go to:
+
+```
+http://localhost:8000
+```
+
+You'll see the ChatGPT-style interface with:
+- Chat area with markdown rendering and code highlighting
+- Sidebar with conversation history
+- Voice input button (microphone)
+- File upload button (paperclip)
+
+## 6. Test the API Endpoints
+
+### Chat
+
+```bash
+# Send a message
+curl -X POST http://localhost:8000/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What is your return policy?"}'
+
+# Continue a conversation
+curl -X POST http://localhost:8000/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Can you explain more?", "conversation_id": "<id-from-above>"}'
+```
+
+### File Upload
+
+```bash
+# Upload a file
+curl -F "file=@document.pdf" http://localhost:8000/v1/upload
+# → {"file_id":"01KN...","filename":"document.pdf","size":1234,"ext":".pdf"}
+
+# Chat about the file
+curl -X POST http://localhost:8000/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Summarize this document", "file_ids": ["01KN..."]}'
+
+# Download a file
+curl http://localhost:8000/v1/files/01KN... -o downloaded.pdf
+```
+
+### Conversations
+
+```bash
+# List all conversations
+curl http://localhost:8000/v1/conversations
+
+# Get messages from a conversation
+curl http://localhost:8000/v1/conversations/<id>/messages
+
+# Rename a conversation
+curl -X PATCH http://localhost:8000/v1/conversations/<id> \
+  -H "Content-Type: application/json" \
+  -d '{"title": "My custom title"}'
+
+# Delete a conversation
+curl -X DELETE http://localhost:8000/v1/conversations/<id>
+```
+
+### RAG (Knowledge Base)
+
+```bash
+# Seed Qdrant with FAQ data first
+make seed
+
+# Query the knowledge base
+curl -X POST http://localhost:8000/v1/rag \
+  -H "Content-Type: application/json" \
+  -d '{"question": "How do I reset my password?"}'
+```
+
+### Swagger UI
+
+```
+http://localhost:8000/docs
+```
+
+## 7. Run Tests Locally
 
 ```bash
 # Create virtual environment
@@ -31,74 +173,11 @@ ruff format --check src/ tests/
 
 **Expected output**: 15 passed, 69% coverage
 
-## 2. Local Development (docker-compose)
-
-```bash
-# Copy env vars and set your Groq API key
-cp .env.example .env
-# Edit .env — set LLM_API_KEY (get one at https://console.groq.com/keys)
-
-# Start all services (API + PostgreSQL + Redis + Qdrant)
-make docker-up
-
-# Run database migrations
-make migrate
-
-# Seed Qdrant with FAQ data
-make seed
-
-# Verify health
-curl http://localhost:8000/healthz
-# → {"status":"ok"}
-
-curl http://localhost:8000/readyz
-# → {"status":"ok","checks":{"database":"ok","redis":"ok","qdrant":"ok"}}
-
-# Test chat endpoint
-curl -X POST http://localhost:8000/v1/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "What is your return policy?"}'
-
-# Upload a file and chat with it
-curl -F "file=@document.pdf" http://localhost:8000/v1/upload
-# → {"file_id":"01KN...","filename":"document.pdf","size":1234,"ext":".pdf"}
-
-curl -X POST http://localhost:8000/v1/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "Summarize this document", "file_ids": ["01KN..."]}'
-
-# List conversations
-curl http://localhost:8000/v1/conversations
-
-# Test RAG endpoint
-curl -X POST http://localhost:8000/v1/rag \
-  -H "Content-Type: application/json" \
-  -d '{"question": "How do I reset my password?"}'
-
-# Open web UI (ChatGPT-style interface)
-open http://localhost:8000
-
-# View Swagger UI
-open http://localhost:8000/docs
-
-# Stop everything
-make docker-down
-```
-
-### Services exposed locally
-
-| Service | Port | URL |
-|---------|------|-----|
-| API | 8000 | http://localhost:8000 |
-| PostgreSQL | 5432 | `postgresql://aiplatform:aiplatform@localhost:5432/aiplatform` |
-| Redis | 6379 | `redis://localhost:6379/0` |
-| Qdrant | 6333 | http://localhost:6333 |
-
 ### Dev Mode (hot reload)
 
 The `docker-compose.override.yml` mounts `src/` into the container and enables `--reload`. Code changes are reflected immediately without rebuilding.
 
-## 3. KIND Cluster Deployment
+## 8. KIND Cluster Deployment
 
 ### One-command setup
 
@@ -145,7 +224,7 @@ make port-forward
 make kind-down
 ```
 
-## 4. Production Deployment
+## 9. Production Deployment
 
 ### With ArgoCD (GitOps)
 
@@ -199,7 +278,7 @@ Canary routing uses NGINX ingress annotations to split traffic between stable an
 helm upgrade ai-platform helm/ai-platform -n ai-platform \
   --set api.canary.enabled=true \
   --set api.canary.weight=10 \
-  --set api.canary.model="anthropic/claude-sonnet-4-20250514"
+  --set api.canary.model="new-model-to-test"
 
 # Step 2: Monitor metrics in Grafana, check error rates
 
@@ -216,7 +295,7 @@ helm upgrade ai-platform helm/ai-platform -n ai-platform \
 helm rollback ai-platform -n ai-platform
 ```
 
-## 5. Monitoring Setup
+## 10. Monitoring Setup
 
 ```bash
 # Prometheus + Grafana
@@ -249,7 +328,20 @@ The `api-overview.json` dashboard includes:
 - CPU usage per pod
 - Memory usage per pod
 
-## 6. Make Commands Reference
+## 11. Stopping & Cleanup
+
+```bash
+# Stop Docker containers
+docker compose down
+
+# Stop and remove all data (volumes)
+docker compose down -v
+
+# Delete KIND cluster
+make kind-down
+```
+
+## Make Commands Reference
 
 ```
 make help           Show all available commands
