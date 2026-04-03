@@ -86,9 +86,10 @@ By completing this project, mentees should be able to:
 | Phase 4 | Observability | Done |
 | Phase 5 | Security + MLOps | Done |
 
-- **81 files** across all phases
+- **90+ files** across all phases
 - **15 tests passing** with **69% code coverage**
 - Python 3.11 | FastAPI | async throughout
+- ChatGPT-style web UI with sidebar, markdown, voice input, file upload
 
 ## Project Structure
 
@@ -100,16 +101,19 @@ Ai-systems/
 │   ├── dependencies.py           # FastAPI dependency injection
 │   ├── api/                      # Route handlers
 │   │   ├── health.py             # GET /healthz, GET /readyz
-│   │   ├── chat.py               # POST /v1/chat
+│   │   ├── chat.py               # POST /v1/chat (with file context + auto-title)
+│   │   ├── conversations.py      # GET/PATCH/DELETE /v1/conversations
+│   │   ├── files.py              # POST /v1/upload, GET /v1/files/{id}
 │   │   └── rag.py                # POST /v1/rag
 │   ├── schemas/                  # Pydantic request/response models
 │   ├── services/                 # Business logic
 │   │   ├── llm_client.py         # Groq API client (chat + embeddings)
 │   │   ├── cache_service.py      # Redis caching (SHA-256 keys, TTL)
 │   │   ├── rag_service.py        # RAG pipeline (embed → search → LLM)
-│   │   └── conversation_service.py  # PostgreSQL conversation history
+│   │   └── conversation_service.py  # PostgreSQL conversation history (CRUD + title)
 │   ├── models/                   # SQLAlchemy ORM models
-│   ├── db/                       # Alembic migrations
+│   ├── db/                       # Alembic migrations (001_initial, 002_add_title)
+│   ├── static/                   # Chat web UI (index.html)
 │   └── core/                     # Logging, telemetry, middleware
 ├── tests/                        # Unit + integration tests (15 tests, 69% coverage)
 │   ├── test_health.py            # Health endpoint tests
@@ -146,13 +150,32 @@ Ai-systems/
 └── pyproject.toml                # Python deps + tool config
 ```
 
+## Web UI Features
+
+The platform includes a ChatGPT-style web interface served at `/`:
+
+- **Sidebar** — Conversation history with click-to-load, inline rename, delete
+- **Auto-titles** — LLM generates short titles for new conversations
+- **Markdown rendering** — Bold, italic, lists, tables, headings, blockquotes (via marked.js)
+- **Code blocks** — Syntax-highlighted with copy button (via highlight.js)
+- **Voice input** — Browser-native speech recognition (Chrome/Edge/Safari)
+- **File upload** — Attach files (text, code, PDF, images), PDF text extracted for LLM context
+- **Mobile responsive** — Sidebar toggle with hamburger menu
+
 ## API Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
+| GET | `/` | Chat web UI |
 | GET | `/healthz` | Liveness probe |
 | GET | `/readyz` | Readiness probe (checks DB, Redis, Qdrant) |
-| POST | `/v1/chat` | Chat with AI assistant (with conversation history) |
+| POST | `/v1/chat` | Chat with AI assistant (supports `file_ids` for attachments) |
+| GET | `/v1/conversations` | List all conversations (with auto-generated titles) |
+| GET | `/v1/conversations/{id}/messages` | Get full message history |
+| PATCH | `/v1/conversations/{id}` | Rename a conversation |
+| DELETE | `/v1/conversations/{id}` | Delete a conversation |
+| POST | `/v1/upload` | Upload a file (max 10MB, returns file_id) |
+| GET | `/v1/files/{id}` | Download an uploaded file |
 | POST | `/v1/rag` | RAG query against FAQ knowledge base |
 | GET | `/docs` | Swagger UI (dev only) |
 

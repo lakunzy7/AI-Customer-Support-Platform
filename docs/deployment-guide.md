@@ -59,10 +59,24 @@ curl -X POST http://localhost:8000/v1/chat \
   -H "Content-Type: application/json" \
   -d '{"message": "What is your return policy?"}'
 
+# Upload a file and chat with it
+curl -F "file=@document.pdf" http://localhost:8000/v1/upload
+# → {"file_id":"01KN...","filename":"document.pdf","size":1234,"ext":".pdf"}
+
+curl -X POST http://localhost:8000/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Summarize this document", "file_ids": ["01KN..."]}'
+
+# List conversations
+curl http://localhost:8000/v1/conversations
+
 # Test RAG endpoint
 curl -X POST http://localhost:8000/v1/rag \
   -H "Content-Type: application/json" \
   -d '{"question": "How do I reset my password?"}'
+
+# Open web UI (ChatGPT-style interface)
+open http://localhost:8000
 
 # View Swagger UI
 open http://localhost:8000/docs
