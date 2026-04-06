@@ -10,12 +10,12 @@ dev: ## Install development dependencies
 	pip install -e ".[dev,otel]"
 
 lint: ## Run linters
-	ruff check src/ tests/
-	ruff format --check src/ tests/
+	ruff check src/
+	ruff format --check src/
 
 format: ## Auto-format code
-	ruff check --fix src/ tests/
-	ruff format src/ tests/
+	ruff check --fix src/
+	ruff format src/
 
 test: ## Run tests
 	pytest -v --cov=src/ai_platform --cov-report=term-missing
@@ -33,7 +33,7 @@ migrate: ## Run database migrations
 	alembic -c src/ai_platform/db/alembic.ini upgrade head
 
 seed: ## Seed Qdrant with sample FAQ data
-	python scripts/seed_qdrant.py
+	python src/scripts/seed_qdrant.py
 
 kind-up: ## Create KIND cluster and deploy
 	bash scripts/kind-setup.sh

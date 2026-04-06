@@ -10,7 +10,6 @@ services:
       DATABASE_URL: postgresql+asyncpg://aiplatform:aiplatform@postgres:5432/aiplatform
       REDIS_URL: redis://redis:6379/0
       QDRANT_HOST: qdrant
-      QDRANT_PORT: "6333"
     volumes:
       - uploads_data:/tmp/ai-platform-uploads
     depends_on:
@@ -21,11 +20,10 @@ services:
       qdrant:
         condition: service_started
     healthcheck:
-      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/healthz').raise_for_status()"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 10s
 
   postgres:
     image: postgres:16-alpine
@@ -33,10 +31,10 @@ services:
       POSTGRES_USER: aiplatform
       POSTGRES_PASSWORD: aiplatform
       POSTGRES_DB: aiplatform
-    volumes:
-      - pg_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U aiplatform"]
       interval: 5s
@@ -47,8 +45,6 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
-    volumes:
-      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -56,15 +52,13 @@ services:
       retries: 5
 
   qdrant:
-    image: qdrant/qdrant:v1.12.5
+    image: qdrant/qdrant:latest
     ports:
       - "6333:6333"
-      - "6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
 
 volumes:
-  pg_data:
-  redis_data:
+  pgdata:
   qdrant_data:
   uploads_data:

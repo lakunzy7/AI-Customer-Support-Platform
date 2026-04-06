@@ -8,17 +8,13 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ai_platform.api.file_extractors import IMAGE_EXTENSIONS, extract_file_content
 from ai_platform.config import Settings
 from ai_platform.dependencies import get_db, get_http_client, get_redis, get_settings
 from ai_platform.schemas.chat import ChatRequest, ChatResponse
 from ai_platform.services.cache_service import CacheService
 from ai_platform.services.conversation_service import ConversationService
 from ai_platform.services.llm_client import LLMClient
-
-TEXT_EXTENSIONS = {
-    ".txt", ".md", ".csv", ".json", ".xml", ".yaml", ".yml",
-    ".py", ".js", ".ts", ".html", ".css", ".sql", ".sh", ".log",
-}
 
 router = APIRouter(prefix="/v1", tags=["chat"])
 logger = structlog.get_logger(__name__)
@@ -91,7 +87,7 @@ async def chat(
     # Attach file contents as context
     if body.file_ids:
         upload_dir = Path(settings.upload_dir)
-        file_context_parts = []
+        file_context_parts: list[str] = []
         for fid in body.file_ids[:5]:  # max 5 files
             matches = [p for p in upload_dir.glob(f"{fid}.*") if ".meta." not in p.name]
             if not matches:
@@ -99,33 +95,26 @@ async def chat(
             fpath = matches[0]
             ext = fpath.suffix.lower()
 
-            # Get original filename from metadata
             from ai_platform.api.files import get_file_meta
             meta = get_file_meta(upload_dir, fid)
             display_name = meta["filename"] if meta else fpath.name
 
-            if ext in TEXT_EXTENSIONS:
-                try:
-                    text = fpath.read_text(errors="replace")[:8000]
-                    file_context_parts.append(f"[File: {display_name}]\n{text}")
-                except Exception:
-                    pass
-            elif ext == ".pdf":
-                try:
-                    import fitz  # PyMuPDF
-                    doc = fitz.open(str(fpath))
-                    pdf_text = ""
-                    for page in doc:
-                        pdf_text += page.get_text()
-                        if len(pdf_text) > 8000:
-                            break
-                    doc.close()
-                    pdf_text = pdf_text[:8000]
-                    file_context_parts.append(f"[File: {display_name}]\n{pdf_text}")
-                except Exception:
-                    file_context_parts.append(f"[File: {display_name} (PDF — could not extract text)]")
+            if ext in IMAGE_EXTENSIONS:
+                file_context_parts.append(
+                    f"[File: {display_name} — This is an image file. "
+                    f"Image analysis is not available with the current AI model. "
+                    f"Please describe the image contents in your message if you need help with it.]"
+                )
+                continue
+
+            content = extract_file_content(fpath)
+            if content is not None:
+                file_context_parts.append(f"[File: {display_name}]\n{content}")
             else:
-                file_context_parts.append(f"[File: {display_name} ({ext} binary file attached)]")
+                file_context_parts.append(
+                    f"[File: {display_name} (could not extract text from {ext} file)]"
+                )
+
         if file_context_parts:
             file_context = "\n\n".join(file_context_parts)
             messages.insert(1, {"role": "user", "content": f"The user has attached the following files. Read and understand their contents:\n\n{file_context}"})

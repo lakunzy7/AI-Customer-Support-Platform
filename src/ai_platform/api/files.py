@@ -13,9 +13,13 @@ router = APIRouter(prefix="/v1", tags=["files"])
 logger = structlog.get_logger(__name__)
 
 ALLOWED_EXTENSIONS = {
+    # Text / code
     ".txt", ".md", ".csv", ".json", ".xml", ".yaml", ".yml",
-    ".py", ".js", ".ts", ".html", ".css", ".sql", ".sh",
-    ".log", ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp",
+    ".py", ".js", ".ts", ".html", ".css", ".sql", ".sh", ".log",
+    # Documents
+    ".pdf", ".docx", ".doc", ".xlsx", ".pptx", ".odt", ".ods", ".rtf", ".epub",
+    # Images (accepted for upload, but no content extraction)
+    ".png", ".jpg", ".jpeg", ".gif", ".webp",
 }
 
 
