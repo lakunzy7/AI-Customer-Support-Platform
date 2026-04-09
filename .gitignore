@@ -42,3 +42,4 @@ Thumbs.db
 
 # Alembic
 src/ai_platform/db/versions/*.pyc
+.blackboxcli/

@@ -19,6 +19,13 @@ logger = structlog.get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
+    try:
+        from ai_platform.core.telemetry import setup_telemetry
+
+        setup_telemetry(app)
+        await logger.ainfo("telemetry_enabled")
+    except ImportError:
+        pass  # otel extras not installed
     await logger.ainfo("startup", env=settings.app_env)
     yield
     await logger.ainfo("shutdown")
@@ -49,6 +56,14 @@ app.include_router(chat.router)
 app.include_router(conversations.router)
 app.include_router(files.router)
 app.include_router(rag.router)
+
+# Prometheus metrics — FastAPI request instrumentation + /metrics endpoint
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+
+    Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+except ImportError:
+    pass  # prometheus-fastapi-instrumentator not installed
 
 # Static files and chat UI
 STATIC_DIR = Path(__file__).parent / "static"

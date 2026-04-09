@@ -13,9 +13,9 @@ spec:
         - alert: HighErrorRate
           expr: |
             (
-              sum(rate(http_server_request_duration_seconds_count{http_status_code=~"5.."}[5m]))
+              sum(rate(http_requests_total{status="5xx"}[5m]))
               /
-              sum(rate(http_server_request_duration_seconds_count[5m]))
+              sum(rate(http_requests_total[5m]))
             ) > 0.05
           for: 5m
           labels:
@@ -27,7 +27,7 @@ spec:
         # High latency
         - alert: HighLatencyP95
           expr: |
-            histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket[5m])) by (le))
+            histogram_quantile(0.95, sum(rate(http_request_duration_highr_seconds_bucket[5m])) by (le))
             > 2
           for: 5m
           labels:
@@ -61,8 +61,8 @@ spec:
         # SLO recording rules — 99.5% availability target
         - record: ai_platform:http_requests:error_ratio_5m
           expr: |
-            sum(rate(http_server_request_duration_seconds_count{http_status_code=~"5.."}[5m]))
+            sum(rate(http_requests_total{status="5xx"}[5m]))
             /
-            sum(rate(http_server_request_duration_seconds_count[5m]))
+            sum(rate(http_requests_total[5m]))
         - record: ai_platform:http_requests:availability_5m
           expr: 1 - ai_platform:http_requests:error_ratio_5m

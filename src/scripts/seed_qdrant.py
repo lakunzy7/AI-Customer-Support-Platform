@@ -3,18 +3,15 @@
 
 import asyncio
 import os
-import sys
 
-import httpx
+from fastembed import TextEmbedding
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
 
 QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
 COLLECTION = os.getenv("QDRANT_COLLECTION", "faq_documents")
-LLM_API_KEY = os.getenv("LLM_API_KEY", "")
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.groq.com/openai/v1")
-EMBEDDING_MODEL = "nomic-embed-text"
+EMBEDDING_MODEL = "nomic-ai/nomic-embed-text-v1"
 VECTOR_DIM = 768
 
 FAQ_DOCS = [
@@ -69,20 +66,12 @@ FAQ_DOCS = [
 ]
 
 
-async def get_embeddings(texts: list[str]) -> list[list[float]]:
-    """Fetch embeddings from LLM provider (Groq)."""
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(
-            f"{LLM_BASE_URL}/embeddings",
-            json={"model": EMBEDDING_MODEL, "input": texts},
-            headers={
-                "Authorization": f"Bearer {LLM_API_KEY}",
-                "Content-Type": "application/json",
-            },
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        return [item["embedding"] for item in data["data"]]
+def get_embeddings(texts: list[str]) -> list[list[float]]:
+    """Generate embeddings locally using fastembed (no external API needed)."""
+    print(f"Loading fastembed model '{EMBEDDING_MODEL}'...")
+    model = TextEmbedding(model_name=EMBEDDING_MODEL)
+    print(f"Embedding {len(texts)} documents locally...")
+    return [emb.tolist() for emb in model.embed(texts)]
 
 
 async def main() -> None:
@@ -101,17 +90,9 @@ async def main() -> None:
     )
     print(f"Created collection '{COLLECTION}' (dim={VECTOR_DIM})")
 
-    # Embed all documents
+    # Embed all documents using fastembed (local, no API key needed)
     texts = [doc["text"] for doc in FAQ_DOCS]
-    if LLM_API_KEY:
-        print(f"Embedding {len(texts)} documents via Groq...")
-        embeddings = await get_embeddings(texts)
-    else:
-        # Fallback: use random vectors for local dev without API key
-        import random
-
-        print("No API key — using random vectors for local testing")
-        embeddings = [[random.uniform(-1, 1) for _ in range(VECTOR_DIM)] for _ in texts]
+    embeddings = get_embeddings(texts)
 
     # Upsert points
     points = [

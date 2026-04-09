@@ -6,7 +6,7 @@ FROM python:3.11-slim AS builder
 WORKDIR /build
 COPY pyproject.toml .
 COPY src/ ./src/
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir ".[otel]"
 
 ###############################################################################
 # Stage 2 — runtime
@@ -14,7 +14,8 @@ RUN pip install --no-cache-dir .
 FROM python:3.11-slim AS runtime
 
 RUN groupadd -r appuser && useradd -r -g appuser -s /sbin/nologin appuser \
-    && mkdir -p /tmp/ai-platform-uploads && chown appuser:appuser /tmp/ai-platform-uploads
+    && mkdir -p /tmp/ai-platform-uploads && chown appuser:appuser /tmp/ai-platform-uploads \
+    && mkdir -p /home/appuser/.cache && chown -R appuser:appuser /home/appuser
 
 WORKDIR /app
 
@@ -23,7 +24,9 @@ COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/uvicorn
 COPY src/ ./src/
 
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    HOME=/home/appuser \
+    FASTEMBED_CACHE_PATH=/tmp/fastembed-cache
 
 EXPOSE 8000
 

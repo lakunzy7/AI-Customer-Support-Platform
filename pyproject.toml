@@ -29,6 +29,7 @@ dependencies = [
     "striprtf>=0.0.26",
     "ebooklib>=0.18",
     "beautifulsoup4>=4.12.0",
+    "fastembed>=0.3.0",
 ]
 
 [project.optional-dependencies]
@@ -48,6 +49,9 @@ otel = [
     "opentelemetry-instrumentation-httpx>=0.48b0",
     "opentelemetry-instrumentation-sqlalchemy>=0.48b0",
     "opentelemetry-exporter-otlp>=1.27.0",
+    "opentelemetry-exporter-prometheus>=0.48b0",
+    "prometheus-client>=0.20.0",
+    "prometheus-fastapi-instrumentator>=7.0.0",
 ]
 
 [tool.hatch.build.targets.wheel]
