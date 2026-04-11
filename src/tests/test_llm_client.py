@@ -1,5 +1,6 @@
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import numpy as np
 import pytest
 
 from ai_platform.services.llm_client import LLMClient
@@ -33,13 +34,11 @@ async def test_chat_returns_content(llm_client, mock_http_client):
 
 @pytest.mark.asyncio
 async def test_embed_returns_vector(llm_client, mock_http_client):
-    mock_response = MagicMock()
-    mock_response.json.return_value = {
-        "data": [{"embedding": [0.1, 0.2, 0.3]}],
-    }
-    mock_response.raise_for_status = MagicMock()
-    mock_http_client.post = AsyncMock(return_value=mock_response)
+    mock_model = MagicMock()
+    mock_model.embed.return_value = [np.array([0.1, 0.2, 0.3])]
 
-    result = await llm_client.embed("test text")
+    with patch("ai_platform.services.llm_client._get_fastembed_model", return_value=mock_model):
+        result = await llm_client.embed("test text")
 
-    assert result == [0.1, 0.2, 0.3]
+    assert result == [pytest.approx(0.1), pytest.approx(0.2), pytest.approx(0.3)]
+    mock_model.embed.assert_called_once_with(["test text"])
