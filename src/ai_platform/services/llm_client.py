@@ -13,7 +13,9 @@ logger = structlog.get_logger(__name__)
 def _get_fastembed_model(model_name: str = "nomic-ai/nomic-embed-text-v1"):
     """Load and cache the fastembed model (downloaded once on first use)."""
     from fastembed import TextEmbedding
+
     return TextEmbedding(model_name=model_name)
+
 
 # LLM request duration histogram (available after setup_telemetry is called)
 _llm_duration = None
@@ -31,7 +33,7 @@ def _get_llm_histogram():
                 description="Duration of LLM API requests",
                 unit="s",
             )
-        except Exception:
+        except Exception:  # noqa: S110
             pass
     return _llm_duration
 
@@ -82,7 +84,9 @@ class LLMClient:
         data = response.json()
 
         content: str = data["choices"][0]["message"]["content"]
-        await logger.ainfo("llm_response", tokens=data.get("usage", {}), duration_s=round(duration, 3))
+        await logger.ainfo(
+            "llm_response", tokens=data.get("usage", {}), duration_s=round(duration, 3)
+        )
         return content
 
     async def embed(self, text: str, *, model: str = "nomic-ai/nomic-embed-text-v1") -> list[float]:

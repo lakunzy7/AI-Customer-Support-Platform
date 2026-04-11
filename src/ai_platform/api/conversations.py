@@ -64,9 +64,9 @@ async def get_conversation_messages(
     conv = await svc.get_conversation(conversation_id)
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    history = await svc.get_history(conversation_id)
     # get_history returns dicts, we need created_at too
     from sqlalchemy import select
+
     from ai_platform.models.conversation import Message
 
     result = await db.execute(

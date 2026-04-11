@@ -3,10 +3,9 @@ import redis.asyncio as redis
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from qdrant_client import AsyncQdrantClient
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from ai_platform.config import Settings
-from ai_platform.dependencies import get_db, get_http_client, get_qdrant, get_redis, get_settings
+from ai_platform.dependencies import get_http_client, get_qdrant, get_redis, get_settings
 from ai_platform.schemas.chat import RagRequest, RagResponse
 from ai_platform.services.cache_service import CacheService
 from ai_platform.services.llm_client import LLMClient

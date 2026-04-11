@@ -1,5 +1,4 @@
 import asyncio
-import json
 from pathlib import Path
 
 import httpx
@@ -19,12 +18,12 @@ from ai_platform.services.llm_client import LLMClient
 router = APIRouter(prefix="/v1", tags=["chat"])
 logger = structlog.get_logger(__name__)
 
-SYSTEM_PROMPT = (
-    "You are a helpful customer support assistant. "
-    "Be concise, friendly, and accurate."
-)
+SYSTEM_PROMPT = "You are a helpful customer support assistant. Be concise, friendly, and accurate."
 
-TITLE_PROMPT = "Summarize this conversation in 3-5 words as a short title. Reply with ONLY the title, nothing else."
+TITLE_PROMPT = (
+    "Summarize this conversation in 3-5 words as a short title. "
+    "Reply with ONLY the title, nothing else."
+)
 
 
 async def _generate_title(
@@ -96,6 +95,7 @@ async def chat(
             ext = fpath.suffix.lower()
 
             from ai_platform.api.files import get_file_meta
+
             meta = get_file_meta(upload_dir, fid)
             display_name = meta["filename"] if meta else fpath.name
 
@@ -117,7 +117,17 @@ async def chat(
 
         if file_context_parts:
             file_context = "\n\n".join(file_context_parts)
-            messages.insert(1, {"role": "user", "content": f"The user has attached the following files. Read and understand their contents:\n\n{file_context}"})
+            messages.insert(
+                1,
+                {
+                    "role": "user",
+                    "content": (
+                        "The user has attached the following files. "
+                        "Read and understand their contents:"
+                        f"\n\n{file_context}"
+                    ),
+                },
+            )
 
     try:
         reply = await llm.chat(messages)

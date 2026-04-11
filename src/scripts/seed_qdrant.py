@@ -101,7 +101,7 @@ async def main() -> None:
             vector=embedding,
             payload={"text": doc["text"], "source": doc["source"]},
         )
-        for i, (doc, embedding) in enumerate(zip(FAQ_DOCS, embeddings))
+        for i, (doc, embedding) in enumerate(zip(FAQ_DOCS, embeddings, strict=True))
     ]
     await client.upsert(collection_name=COLLECTION, points=points)
     print(f"Inserted {len(points)} FAQ documents into '{COLLECTION}'")

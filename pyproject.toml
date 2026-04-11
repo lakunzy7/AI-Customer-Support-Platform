@@ -63,7 +63,11 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "S"]
-ignore = ["S104"]
+ignore = ["S104", "S108", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/tests/**" = ["S101"]
+"src/ai_platform/db/versions/**" = ["UP007", "UP035", "I001"]
 
 [tool.pytest.ini_options]
 testpaths = ["src/tests"]

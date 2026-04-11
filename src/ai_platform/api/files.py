@@ -14,12 +14,37 @@ logger = structlog.get_logger(__name__)
 
 ALLOWED_EXTENSIONS = {
     # Text / code
-    ".txt", ".md", ".csv", ".json", ".xml", ".yaml", ".yml",
-    ".py", ".js", ".ts", ".html", ".css", ".sql", ".sh", ".log",
+    ".txt",
+    ".md",
+    ".csv",
+    ".json",
+    ".xml",
+    ".yaml",
+    ".yml",
+    ".py",
+    ".js",
+    ".ts",
+    ".html",
+    ".css",
+    ".sql",
+    ".sh",
+    ".log",
     # Documents
-    ".pdf", ".docx", ".doc", ".xlsx", ".pptx", ".odt", ".ods", ".rtf", ".epub",
+    ".pdf",
+    ".docx",
+    ".doc",
+    ".xlsx",
+    ".pptx",
+    ".odt",
+    ".ods",
+    ".rtf",
+    ".epub",
     # Images (accepted for upload, but no content extraction)
-    ".png", ".jpg", ".jpeg", ".gif", ".webp",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
 }
 
 
@@ -40,7 +65,10 @@ async def upload_file(
     content = await file.read()
     max_bytes = settings.max_upload_size_mb * 1024 * 1024
     if len(content) > max_bytes:
-        raise HTTPException(status_code=400, detail=f"File exceeds {settings.max_upload_size_mb}MB limit")
+        raise HTTPException(
+            status_code=400,
+            detail=f"File exceeds {settings.max_upload_size_mb}MB limit",
+        )
 
     # Save file
     upload_dir = Path(settings.upload_dir)

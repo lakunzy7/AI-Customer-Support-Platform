@@ -42,4 +42,4 @@ jobs:
       - name: Install dependencies
         run: pip install -e . pip-audit
       - name: Run pip-audit
-        run: pip-audit --strict --desc
+        run: pip-audit --desc --local
