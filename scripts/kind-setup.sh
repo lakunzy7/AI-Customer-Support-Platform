@@ -20,19 +20,37 @@ kubectl wait --namespace ingress-nginx \
 echo "==> Creating namespaces..."
 kubectl apply -f "${ROOT_DIR}/k8s/namespaces/"
 
-echo "==> Loading local Docker image into KIND..."
-docker build -t ai-platform:local -f "${ROOT_DIR}/docker/api/Dockerfile" "${ROOT_DIR}"
-kind load docker-image ai-platform:local --name "${CLUSTER_NAME}"
-
-echo "==> Installing Helm chart..."
-helm upgrade --install ai-platform "${ROOT_DIR}/helm/ai-platform" \
-  -n ai-platform \
-  -f "${ROOT_DIR}/helm/ai-platform/values-dev.yaml" \
+echo "==> Installing ArgoCD..."
+helm repo add argo https://argoproj.github.io/argo-helm 2>/dev/null || true
+helm repo update
+helm upgrade --install argocd argo/argo-cd -n argocd \
+  -f "${ROOT_DIR}/k8s/argocd/install.yaml" \
   --wait --timeout 180s
 
-echo "==> Cluster ready! Pods:"
-kubectl get pods -n ai-platform
+echo "==> Waiting for ArgoCD server to be ready..."
+kubectl wait --namespace argocd \
+  --for=condition=ready pod \
+  --selector=app.kubernetes.io/name=argocd-server \
+  --timeout=120s
+
+echo "==> Deploying App-of-Apps..."
+kubectl apply -f "${ROOT_DIR}/k8s/argocd/app-of-apps.yaml"
+
+echo "==> Waiting for ArgoCD to sync ai-platform app..."
+sleep 30
+kubectl wait --for=condition=ready pod \
+  -l app.kubernetes.io/name=ai-platform-api \
+  -n ai-platform --timeout=300s 2>/dev/null || echo "  (app may still be syncing — check ArgoCD UI)"
+
+ARGOCD_PASS=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
 
 echo ""
-echo "Access the API at http://localhost (via ingress)"
-echo "Or use: make port-forward"
+echo "==> Cluster ready!"
+echo ""
+kubectl get pods -n ai-platform
+echo ""
+echo "ArgoCD UI:  http://localhost:30080"
+echo "  User:     admin"
+echo "  Password: ${ARGOCD_PASS}"
+echo ""
+echo "API:        http://localhost:8000 (use: make port-forward)"

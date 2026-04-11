@@ -8,7 +8,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/Lakunzy/Ai-systems.git
+    repoURL: https://github.com/lakunzy7/AI-Customer-Support-Platform.git
     targetRevision: main
     path: helm/ai-platform
     helm:

@@ -1,4 +1,4 @@
-.PHONY: help install dev lint test run docker-up docker-down migrate seed kind-up kind-down port-forward
+.PHONY: help install dev lint test run docker-up docker-down migrate seed kind-up kind-down port-forward argocd-pass
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -43,3 +43,6 @@ kind-down: ## Delete KIND cluster
 
 port-forward: ## Port-forward services from KIND
 	bash scripts/port-forward.sh
+
+argocd-pass: ## Show ArgoCD admin password
+	@kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d && echo

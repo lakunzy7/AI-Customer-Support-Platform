@@ -4,7 +4,7 @@ global:
 api:
   replicas: 2
   image:
-    repository: ghcr.io/lakunzy/ai-platform
+    repository: ghcr.io/lakunzy7/ai-platform
     tag: latest
     pullPolicy: IfNotPresent
   logLevel: info
@@ -46,7 +46,7 @@ api:
     weight: 10  # % of traffic to canary
     model: "llama-3.3-70b-versatile"
     image:
-      repository: ghcr.io/lakunzy/ai-platform
+      repository: ghcr.io/lakunzy7/ai-platform
       tag: latest
 
 redis:

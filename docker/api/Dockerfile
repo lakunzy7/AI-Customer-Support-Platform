@@ -6,10 +6,17 @@ FROM python:3.11-slim AS builder
 WORKDIR /build
 COPY pyproject.toml .
 COPY src/ ./src/
-RUN pip install --no-cache-dir ".[otel]"
+
+RUN pip install --no-cache-dir --no-compile ".[otel]" \
+    && SITE=/usr/local/lib/python3.11/site-packages \
+    && find $SITE -type d \( -name "__pycache__" -o -name "tests" -o -name "test" -o -name "testing" \) -exec rm -rf {} + 2>/dev/null; \
+    find $SITE -type f \( -name "*.pyc" -o -name "*.pyo" \) -delete 2>/dev/null; \
+    find $SITE -type f -name "*.so" -exec strip --strip-unneeded {} + 2>/dev/null; \
+    rm -rf $SITE/pip $SITE/setuptools $SITE/wheel $SITE/pkg_resources 2>/dev/null; \
+    true
 
 ###############################################################################
-# Stage 2 — runtime
+# Stage 2 — minimal runtime
 ###############################################################################
 FROM python:3.11-slim AS runtime
 
