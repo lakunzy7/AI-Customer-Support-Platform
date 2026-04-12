@@ -4,7 +4,7 @@ metadata:
   name: ai-platform-alerts
   namespace: monitoring
   labels:
-    release: kube-prometheus-stack
+    release: monitoring
 spec:
   groups:
     - name: ai-platform.rules

@@ -18,9 +18,11 @@ data:
         {
           "title": "Request Rate (req/s)",
           "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
           "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
           "targets": [
             {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
               "expr": "sum(rate(http_requests_total[5m]))",
               "legendFormat": "Total"
             }
@@ -29,9 +31,11 @@ data:
         {
           "title": "Error Rate (%)",
           "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
           "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
           "targets": [
             {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
               "expr": "100 * ai_platform:http_requests:error_ratio_5m",
               "legendFormat": "5xx Rate"
             }
@@ -40,17 +44,21 @@ data:
         {
           "title": "Latency (P50 / P95 / P99)",
           "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
           "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
           "targets": [
             {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
               "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_highr_seconds_bucket[5m])) by (le))",
               "legendFormat": "P50"
             },
             {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
               "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_highr_seconds_bucket[5m])) by (le))",
               "legendFormat": "P95"
             },
             {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
               "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_highr_seconds_bucket[5m])) by (le))",
               "legendFormat": "P99"
             }
@@ -59,9 +67,11 @@ data:
         {
           "title": "LLM Request Duration (P95)",
           "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
           "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
           "targets": [
             {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
               "expr": "histogram_quantile(0.95, sum(rate(llm_request_duration_seconds_bucket[5m])) by (le))",
               "legendFormat": "LLM P95"
             }
@@ -70,9 +80,11 @@ data:
         {
           "title": "Active Pods",
           "type": "stat",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
           "gridPos": { "h": 4, "w": 6, "x": 0, "y": 16 },
           "targets": [
             {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
               "expr": "count(kube_pod_status_phase{namespace=\"ai-platform\", phase=\"Running\"})",
               "legendFormat": "Running"
             }
@@ -81,9 +93,11 @@ data:
         {
           "title": "CPU Usage",
           "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
           "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
           "targets": [
             {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
               "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"ai-platform\"}[5m])) by (pod)",
               "legendFormat": "{{ pod }}"
             }
@@ -92,9 +106,11 @@ data:
         {
           "title": "Memory Usage",
           "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
           "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
           "targets": [
             {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
               "expr": "sum(container_memory_working_set_bytes{namespace=\"ai-platform\"}) by (pod) / 1024 / 1024",
               "legendFormat": "{{ pod }} (MiB)"
             }
