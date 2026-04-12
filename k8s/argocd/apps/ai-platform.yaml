@@ -17,9 +17,16 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: ai-platform
+  ignoreDifferences:
+    - group: ""
+      kind: Secret
+      name: ai-platform-secrets
+      jsonPointers:
+        - /data
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - RespectIgnoreDifferences=true
