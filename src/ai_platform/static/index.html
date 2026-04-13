@@ -623,7 +623,8 @@
     try {
       const res = await fetch('/v1/conversations');
       if (!res.ok) return;
-      const convs = await res.json();
+      const data = await res.json();
+      const convs = data.conversations || [];
       convList.innerHTML = '';
       convs.forEach(c => {
         const item = document.createElement('div');

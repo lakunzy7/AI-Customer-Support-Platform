@@ -79,6 +79,9 @@ postgresql:
       cpu: 500m
       memory: 512Mi
 
+seed:
+  enabled: true
+
 qdrant:
   image:
     repository: qdrant/qdrant

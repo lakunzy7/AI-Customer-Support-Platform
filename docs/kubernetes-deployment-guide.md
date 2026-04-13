@@ -1,4 +1,4 @@
-# Kubernetes Deployment Guide — AI Customer Support Platform
+ll # Kubernetes Deployment Guide — AI Customer Support Platform
 
 > **Type**: Kubernetes Deployment (NOT local development — for local setup see [local-setup-guide.md](local-setup-guide.md))
 > **Audience**: Beginners in DevOps who want to deploy a production-grade Kubernetes application from scratch.
@@ -19,10 +19,10 @@
 8. [Step 4 — Install the NGINX Ingress Controller](#step-4--install-the-nginx-ingress-controller)
 9. [Step 5 — Create Namespaces and Resource Quotas](#step-5--create-namespaces-and-resource-quotas)
 10. [Step 6 — Install ArgoCD](#step-6--install-argocd)
-11. [Step 7 — Deploy with App-of-Apps](#step-7--deploy-with-app-of-apps)
-12. [Step 8 — Seed Secrets](#step-8--seed-secrets)
-13. [Step 9 — Run Database Migrations](#step-9--run-database-migrations)
-14. [Step 10 — Seed the Vector Database (RAG)](#step-10--seed-the-vector-database-rag)
+11. [Step 7 — Seed Secrets](#step-7--seed-secrets-automated-from-env)
+12. [Step 8 — Deploy with App-of-Apps](#step-8--deploy-with-app-of-apps)
+13. [Step 9 — Database Migrations (Automated)](#step-9--database-migrations-automated)
+14. [Step 10 — Seed the Vector Database (Automated)](#step-10--seed-the-vector-database-automated)
 15. [Step 11 — Access the Application](#step-11--access-the-application)
 16. [Step 12 — Verify Monitoring](#step-12--verify-monitoring)
 17. [Concepts Explained](#concepts-explained)
@@ -277,13 +277,23 @@ AI-Customer-Support-Platform/
 1. Go to https://console.groq.com/keys
 2. Click **Create API Key**
 3. Copy the key (starts with `gsk_...`)
-4. Create the `.env` file:
+4. Create the `.env` file in the project root:
 
 ```bash
+# IMPORTANT: Replace gsk_your_actual_key_here with your REAL Groq API key
 echo "LLM_API_KEY=gsk_your_actual_key_here" > .env
 ```
 
+5. **Verify** the key is set correctly:
+
+```bash
+grep '^LLM_API_KEY=' .env
+# Should show: LLM_API_KEY=gsk_... (your actual key, NOT the placeholder)
+```
+
 > **Why Groq?** Groq provides extremely fast LLM inference using their custom LPU hardware. The free tier is generous for development and testing. This project uses `llama-3.3-70b-versatile` — a powerful open-source model.
+>
+> **Common mistake**: If you see `HTTP 500` errors after deployment, the most likely cause is a missing or invalid API key. Come back to this step and verify your `.env` file has a real Groq key.
 
 ---
 
@@ -495,7 +505,62 @@ kubectl get pods -n argocd
 
 ---
 
-## Step 7 — Deploy with App-of-Apps
+## Step 7 — Seed Secrets (Automated from .env)
+
+Your API needs the Groq API key to function. This step reads your `.env` file (created in [Step 2](#step-2--get-your-groq-api-key)) and creates a Kubernetes Secret with an `IgnoreExtraneous` annotation so **ArgoCD will never overwrite it**:
+
+```bash
+# Read the key from .env
+LLM_KEY=$(grep '^LLM_API_KEY=' .env | cut -d'=' -f2-)
+
+# Create the secret with ArgoCD ignore annotation
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ai-platform-secrets
+  namespace: ai-platform
+  annotations:
+    argocd.argoproj.io/compare-options: IgnoreExtraneous
+type: Opaque
+stringData:
+  llm-api-key: "${LLM_KEY}"
+EOF
+```
+
+> **Using `kind-setup.sh`?** This step is handled automatically — the script reads your `.env` and seeds the secret for you. You can skip to [Step 8](#step-8--deploy-with-app-of-apps).
+
+**What's happening here:**
+1. `grep` extracts the API key from your `.env` file
+2. The Secret is created with `argocd.argoproj.io/compare-options: IgnoreExtraneous` — this tells ArgoCD to **leave this secret alone** and never overwrite it during sync
+3. The Helm chart does **not** create this secret (it's managed externally)
+4. The API Deployment references this secret via `secretKeyRef` in its environment variables
+
+**Why not put the key in Helm values?**
+Secrets should never live in Git. By managing the secret externally (via `kubectl` or a secrets manager), your API key stays on the cluster only — not in your repository.
+
+**Verify:**
+
+```bash
+# Check the secret exists
+kubectl get secret ai-platform-secrets -n ai-platform
+
+# Verify the key is NOT empty (should show a non-zero length)
+kubectl get secret ai-platform-secrets -n ai-platform \
+  -o jsonpath='{.data.llm-api-key}' | base64 -d | wc -c
+# Should be > 0. If it shows 0, your .env file is missing or has an invalid key.
+```
+
+> **Troubleshooting HTTP 500**: If you get `Error: HTTP 500` when chatting, the #1 cause is an empty or invalid API key. Re-run the command above to reseed the secret, then restart the API pods:
+> ```bash
+> kubectl rollout restart deployment/ai-platform-api -n ai-platform
+> ```
+
+> **Security Note**: The secret is stored encrypted in etcd (Kubernetes' backing store). In production, you would use an external secrets manager (AWS Secrets Manager, HashiCorp Vault, etc.) instead of `kubectl create secret`.
+
+---
+
+## Step 8 — Deploy with App-of-Apps
 
 This is the **single most important command** in the entire deployment. It triggers a cascade that deploys everything.
 
@@ -598,99 +663,74 @@ kubectl get pods -n argocd
 
 ---
 
-## Step 8 — Seed Secrets
+## Step 9 — Database Migrations (Automated)
 
-Now that ArgoCD has deployed the application (including an empty `ai-platform-secrets` Secret from the Helm chart), we overwrite it with your real Groq API key.
+Database migrations run **automatically** via a Helm post-install/post-upgrade hook. When ArgoCD syncs the chart, a Kubernetes Job (`ai-platform-migrate`) executes before the API pods start serving traffic.
 
-> **Why after Step 7?** The Helm chart creates the secret with an empty `llm-api-key` default. If you seed the secret *before* ArgoCD deploys, ArgoCD's first sync overwrites your key with the empty default. By seeding *after* deployment, ArgoCD's `ignoreDifferences` policy on `/data` protects your key from being reset.
+**What happens behind the scenes:**
+1. A Helm hook Job spins up using the same API container image
+2. An init container waits for PostgreSQL to be reachable on port 5432
+3. Alembic runs `upgrade head` — creating or updating all database tables
+4. The Job completes and is automatically cleaned up on the next deploy
 
-```bash
-# Read the key from your .env file and create the secret
-LLM_KEY=$(grep '^LLM_API_KEY=' .env | cut -d'=' -f2-)
-
-kubectl create secret generic ai-platform-secrets -n ai-platform \
-  --from-literal=llm-api-key="$LLM_KEY" \
-  --dry-run=client -o yaml | kubectl apply -f -
-```
-
-**What's happening here:**
-1. `grep` extracts the API key from your `.env` file
-2. `kubectl create secret` creates a Kubernetes Secret object
-3. `--dry-run=client -o yaml | kubectl apply` makes this idempotent (safe to run multiple times)
-4. The API Deployment references this secret via `secretKeyRef` in its environment variables
-
-**Restart the API pods** so they pick up the new key:
+**Verify migrations ran:**
 
 ```bash
-kubectl rollout restart deployment/ai-platform-api -n ai-platform
-kubectl rollout status deployment/ai-platform-api -n ai-platform --timeout=60s
+# Check the migration Job status
+kubectl get jobs -n ai-platform -l app.kubernetes.io/component=migrate
+
+# View migration logs
+kubectl logs -n ai-platform job/ai-platform-migrate
 ```
 
-**Verify the secret has your key:**
+<details>
+<summary><strong>Manual Override (Troubleshooting)</strong></summary>
+
+If you need to run migrations manually:
 
 ```bash
-kubectl get secret -n ai-platform ai-platform-secrets \
-  -o jsonpath='{.data.llm-api-key}' | base64 -d | wc -c
-# Expected: a number greater than 0 (e.g., 56)
+kubectl exec -n ai-platform deploy/ai-platform-api -- \
+  alembic -c /app/src/ai_platform/db/alembic.ini upgrade head
 ```
 
-> **Troubleshooting**: If you see `⚠️ Error: HTTP 500` in the UI, the most common cause is an empty `llm-api-key` secret. Run the verify command above — if it prints `0`, re-run the seed and rollout restart commands above.
-
-> **Security Note**: The secret is stored encrypted in etcd (Kubernetes' backing store). In production, you would use an external secrets manager (AWS Secrets Manager, HashiCorp Vault, etc.) instead of `kubectl create secret`.
+</details>
 
 ---
 
-## Step 9 — Run Database Migrations
+## Step 10 — Seed the Vector Database (Automated)
 
-The PostgreSQL database is empty. We need to create the tables (conversations, messages):
+Qdrant seeding also runs **automatically** via a Helm hook Job (`ai-platform-seed-qdrant`). This populates the vector database with FAQ documents so the RAG (Retrieval-Augmented Generation) feature works out of the box.
+
+**What happens behind the scenes:**
+1. A Helm hook Job starts after migrations complete (hook weight ordering)
+2. An init container waits for Qdrant to be reachable on port 6333
+3. The seed script generates embeddings locally using `fastembed` (no API key needed) and upserts FAQ documents
+4. The Job completes and is cleaned up on the next deploy
+
+**Verify seeding ran:**
 
 ```bash
-kubectl exec -n ai-platform deploy/ai-platform-api -- python3 -c "
-from alembic.config import Config
-from alembic import command
-cfg = Config('src/ai_platform/db/alembic.ini')
-cfg.set_main_option('sqlalchemy.url', 'postgresql+asyncpg://aiplatform:aiplatform@ai-platform-postgresql:5432/aiplatform')
-command.upgrade(cfg, 'head')
-"
+# Check the seed Job status
+kubectl get jobs -n ai-platform -l app.kubernetes.io/component=seed-qdrant
+
+# View seed logs
+kubectl logs -n ai-platform job/ai-platform-seed-qdrant
 ```
 
-**What this does:**
-1. `kubectl exec` opens a shell inside a running API pod
-2. Runs Alembic (Python migration tool) to create database tables
-3. The connection string points to `ai-platform-postgresql` (the K8s Service name)
-4. `upgrade(cfg, 'head')` applies all pending migration files
+> **Tip:** To disable auto-seeding on upgrades (e.g., after adding your own documents), set `seed.enabled: false` in your Helm values override.
 
-**Verify:**
+<details>
+<summary><strong>Manual Override (Troubleshooting)</strong></summary>
 
-```bash
-kubectl exec -n ai-platform deploy/ai-platform-api -- python3 -c "
-from alembic.config import Config
-from alembic import command
-cfg = Config('src/ai_platform/db/alembic.ini')
-cfg.set_main_option('sqlalchemy.url', 'postgresql+asyncpg://aiplatform:aiplatform@ai-platform-postgresql:5432/aiplatform')
-command.current(cfg, verbose=True)
-"
-# Should show: head (indicating all migrations are applied)
-```
-
----
-
-## Step 10 — Seed the Vector Database (RAG)
-
-For the RAG (Retrieval-Augmented Generation) feature to work, Qdrant needs some documents:
+If you need to seed manually:
 
 ```bash
-# First, port-forward Qdrant so the seed script can reach it
 kubectl port-forward -n ai-platform svc/ai-platform-qdrant 6333:6333 &
-
-# Run the seed script
 python src/scripts/seed_qdrant.py
-
-# Stop the port-forward
 kill %1
 ```
 
-This populates Qdrant with FAQ documents. When users ask questions, the system searches these documents for relevant context and includes it in the LLM prompt — this is **RAG (Retrieval-Augmented Generation)**.
+</details>
 
 ---
 
@@ -1246,7 +1286,7 @@ kubectl logs <pod-name> -n ai-platform --previous
 ```
 
 Common causes:
-- **Missing or empty secret**: The `ai-platform-secrets` secret doesn't exist or has an empty `llm-api-key`. Run Step 8 (Seed Secrets) again.
+- **Missing or empty secret**: The `ai-platform-secrets` secret doesn't exist or has an empty `llm-api-key`. Run Step 7 (Seed Secrets) again.
 - **Database not ready**: The API starts before PostgreSQL. Kubernetes will restart it and it should connect on the next attempt.
 - **Invalid API key**: Check that your `.env` has a valid Groq key.
 
