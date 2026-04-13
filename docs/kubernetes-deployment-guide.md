@@ -19,8 +19,8 @@
 8. [Step 4 — Install the NGINX Ingress Controller](#step-4--install-the-nginx-ingress-controller)
 9. [Step 5 — Create Namespaces and Resource Quotas](#step-5--create-namespaces-and-resource-quotas)
 10. [Step 6 — Install ArgoCD](#step-6--install-argocd)
-11. [Step 7 — Seed Secrets](#step-7--seed-secrets)
-12. [Step 8 — Deploy with App-of-Apps](#step-8--deploy-with-app-of-apps)
+11. [Step 7 — Deploy with App-of-Apps](#step-7--deploy-with-app-of-apps)
+12. [Step 8 — Seed Secrets](#step-8--seed-secrets)
 13. [Step 9 — Run Database Migrations](#step-9--run-database-migrations)
 14. [Step 10 — Seed the Vector Database (RAG)](#step-10--seed-the-vector-database-rag)
 15. [Step 11 — Access the Application](#step-11--access-the-application)
@@ -495,38 +495,7 @@ kubectl get pods -n argocd
 
 ---
 
-## Step 7 — Seed Secrets
-
-Your API needs the Groq API key to function. We create a Kubernetes Secret that the API pods will read:
-
-```bash
-# Read the key from your .env file and create the secret
-LLM_KEY=$(grep '^LLM_API_KEY=' .env | cut -d'=' -f2-)
-
-kubectl create secret generic ai-platform-secrets -n ai-platform \
-  --from-literal=llm-api-key="$LLM_KEY" \
-  --dry-run=client -o yaml | kubectl apply -f -
-```
-
-**What's happening here:**
-1. `grep` extracts the API key from your `.env` file
-2. `kubectl create secret` creates a Kubernetes Secret object
-3. `--dry-run=client -o yaml | kubectl apply` makes this idempotent (safe to run multiple times)
-4. The API Deployment references this secret via `secretKeyRef` in its environment variables
-
-**Verify:**
-
-```bash
-kubectl get secret ai-platform-secrets -n ai-platform
-# Expected: NAME                  TYPE     DATA   AGE
-#           ai-platform-secrets   Opaque   1      10s
-```
-
-> **Security Note**: The secret is stored encrypted in etcd (Kubernetes' backing store). In production, you would use an external secrets manager (AWS Secrets Manager, HashiCorp Vault, etc.) instead of `kubectl create secret`.
-
----
-
-## Step 8 — Deploy with App-of-Apps
+## Step 7 — Deploy with App-of-Apps
 
 This is the **single most important command** in the entire deployment. It triggers a cascade that deploys everything.
 
@@ -626,6 +595,48 @@ kubectl get pods -n monitoring
 kubectl get pods -n argocd
 # Expected: 5-7 ArgoCD pods all Running
 ```
+
+---
+
+## Step 8 — Seed Secrets
+
+Now that ArgoCD has deployed the application (including an empty `ai-platform-secrets` Secret from the Helm chart), we overwrite it with your real Groq API key.
+
+> **Why after Step 7?** The Helm chart creates the secret with an empty `llm-api-key` default. If you seed the secret *before* ArgoCD deploys, ArgoCD's first sync overwrites your key with the empty default. By seeding *after* deployment, ArgoCD's `ignoreDifferences` policy on `/data` protects your key from being reset.
+
+```bash
+# Read the key from your .env file and create the secret
+LLM_KEY=$(grep '^LLM_API_KEY=' .env | cut -d'=' -f2-)
+
+kubectl create secret generic ai-platform-secrets -n ai-platform \
+  --from-literal=llm-api-key="$LLM_KEY" \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+**What's happening here:**
+1. `grep` extracts the API key from your `.env` file
+2. `kubectl create secret` creates a Kubernetes Secret object
+3. `--dry-run=client -o yaml | kubectl apply` makes this idempotent (safe to run multiple times)
+4. The API Deployment references this secret via `secretKeyRef` in its environment variables
+
+**Restart the API pods** so they pick up the new key:
+
+```bash
+kubectl rollout restart deployment/ai-platform-api -n ai-platform
+kubectl rollout status deployment/ai-platform-api -n ai-platform --timeout=60s
+```
+
+**Verify the secret has your key:**
+
+```bash
+kubectl get secret -n ai-platform ai-platform-secrets \
+  -o jsonpath='{.data.llm-api-key}' | base64 -d | wc -c
+# Expected: a number greater than 0 (e.g., 56)
+```
+
+> **Troubleshooting**: If you see `⚠️ Error: HTTP 500` in the UI, the most common cause is an empty `llm-api-key` secret. Run the verify command above — if it prints `0`, re-run the seed and rollout restart commands above.
+
+> **Security Note**: The secret is stored encrypted in etcd (Kubernetes' backing store). In production, you would use an external secrets manager (AWS Secrets Manager, HashiCorp Vault, etc.) instead of `kubectl create secret`.
 
 ---
 
@@ -1235,7 +1246,7 @@ kubectl logs <pod-name> -n ai-platform --previous
 ```
 
 Common causes:
-- **Missing secret**: The `ai-platform-secrets` secret doesn't exist. Run Step 7 again.
+- **Missing or empty secret**: The `ai-platform-secrets` secret doesn't exist or has an empty `llm-api-key`. Run Step 8 (Seed Secrets) again.
 - **Database not ready**: The API starts before PostgreSQL. Kubernetes will restart it and it should connect on the next attempt.
 - **Invalid API key**: Check that your `.env` has a valid Groq key.
 
