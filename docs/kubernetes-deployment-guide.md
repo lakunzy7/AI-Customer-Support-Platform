@@ -1,4 +1,4 @@
-ll # Kubernetes Deployment Guide — AI Customer Support Platform
+# Kubernetes Deployment Guide — AI Customer Support Platform
 
 > **Type**: Kubernetes Deployment (NOT local development — for local setup see [local-setup-guide.md](local-setup-guide.md))
 > **Audience**: Beginners in DevOps who want to deploy a production-grade Kubernetes application from scratch.
@@ -745,8 +745,10 @@ Database migrations run **automatically** via a Helm post-install/post-upgrade h
 **What happens behind the scenes:**
 1. A Helm hook Job spins up using the same API container image
 2. An init container waits for PostgreSQL to be reachable on port 5432
-3. Alembic runs `upgrade head` — creating or updating all database tables
+3. The Job runs `python -m alembic upgrade head` with `DATABASE_URL` pointing to the in-cluster PostgreSQL service
 4. The Job completes and is automatically cleaned up on the next deploy
+
+> **Important**: The migrate and seed Jobs include CPU/memory resource requests and limits. This is required because the `ai-platform` namespace has a ResourceQuota — any pod without resource specs will be rejected.
 
 **Verify migrations ran:**
 
@@ -761,12 +763,14 @@ kubectl logs -n ai-platform job/ai-platform-migrate
 <details>
 <summary><strong>Manual Override (Troubleshooting)</strong></summary>
 
-If you need to run migrations manually:
+If the migration Job fails or you need to run migrations manually:
 
 ```bash
 kubectl exec -n ai-platform deploy/ai-platform-api -- \
-  alembic -c /app/src/ai_platform/db/alembic.ini upgrade head
+  python -m alembic -c /app/src/ai_platform/db/alembic.ini upgrade head
 ```
+
+> **Note**: Use `python -m alembic`, not bare `alembic`. The container image copies the `alembic` binary from the builder stage, but `python -m alembic` is more reliable as it doesn't depend on PATH configuration.
 
 </details>
 
@@ -779,8 +783,10 @@ Qdrant seeding also runs **automatically** via a Helm hook Job (`ai-platform-see
 **What happens behind the scenes:**
 1. A Helm hook Job starts after migrations complete (hook weight ordering)
 2. An init container waits for Qdrant to be reachable on port 6333
-3. The seed script generates embeddings locally using `fastembed` (no API key needed) and upserts FAQ documents
+3. The seed script downloads the `fastembed` model (~100 MB) on first run, generates embeddings locally (no API key needed), and upserts FAQ documents
 4. The Job completes and is cleaned up on the next deploy
+
+> **Important**: The seed Job needs enough memory to download and load the embedding model. The Job is configured with 128Mi request / 256Mi limit. If the pod is OOMKilled, you may need to seed manually (see below) or increase the limit in `helm/ai-platform/templates/api/job-seed-qdrant.yaml`.
 
 **Verify seeding ran:**
 
@@ -797,7 +803,14 @@ kubectl logs -n ai-platform job/ai-platform-seed-qdrant
 <details>
 <summary><strong>Manual Override (Troubleshooting)</strong></summary>
 
-If you need to seed manually:
+If the seed Job fails (e.g., OOMKilled while downloading the fastembed model), seed manually from inside an API pod:
+
+```bash
+kubectl exec -n ai-platform deploy/ai-platform-api -- \
+  python /app/src/scripts/seed_qdrant.py
+```
+
+Or from your local machine via port-forward:
 
 ```bash
 kubectl port-forward -n ai-platform svc/ai-platform-qdrant 6333:6333 &
@@ -839,7 +852,7 @@ kubectl port-forward -n ai-platform svc/ai-platform-qdrant 6333:6333 &
 ```bash
 # Test health endpoint
 curl http://localhost:8000/healthz
-# Expected: {"status":"healthy","checks":{"database":"ok","redis":"ok","qdrant":"ok"}}
+# Expected: {"status":"ok"}
 
 # Test chat
 curl -X POST http://localhost:8000/v1/chat \
@@ -973,7 +986,8 @@ Our Helm chart lives at `helm/ai-platform/` and produces these Kubernetes resour
 | `api/ingress.yaml` | Ingress | External access via NGINX |
 | `api/hpa.yaml` | HorizontalPodAutoscaler | Scales pods 2-10 based on CPU/memory |
 | `api/pdb.yaml` | PodDisruptionBudget | At least 1 pod always available during updates |
-| `api/secret.yaml` | Secret | Stores the LLM API key |
+| `api/job-migrate.yaml` | Job (Helm hook) | Runs Alembic migrations post-deploy |
+| `api/job-seed-qdrant.yaml` | Job (Helm hook) | Seeds Qdrant with FAQ documents post-deploy |
 | `api/networkpolicy.yaml` | NetworkPolicy | Firewall rules (production only) |
 | `api/canary-ingress.yaml` | Deployment + Service + Ingress | Canary deployment (optional) |
 | `postgresql/statefulset.yaml` | StatefulSet + PVC | Persistent database |
@@ -1111,16 +1125,20 @@ Everything above can be done automatically with the setup script:
 bash scripts/kind-setup.sh
 ```
 
-This script runs all steps 3-9 in sequence:
+This script runs all steps 3-10 in sequence:
 1. Creates the KIND cluster
 2. Installs NGINX Ingress Controller
 3. Creates namespaces
 4. Installs ArgoCD via Helm
-5. Reads `.env` and creates the LLM API key secret
-6. Applies the App-of-Apps
-7. Waits for pods to be ready
-8. Runs database migrations
-9. Prints the ArgoCD password and access URLs
+5. Applies the App-of-Apps (deploys everything via GitOps)
+6. Waits for the Sealed Secrets controller to be ready
+7. Installs `kubeseal` CLI if missing
+8. Seals secrets from `.env` and applies the SealedSecret
+9. Commits the SealedSecret to Git for future ArgoCD syncs
+10. Waits for API pods to be ready
+11. Prints the ArgoCD password and access URLs
+
+> **Note**: Database migrations and Qdrant seeding run automatically via Helm hook Jobs when ArgoCD syncs the ai-platform chart.
 
 After it finishes:
 
@@ -1343,6 +1361,16 @@ make seed           # Seed Qdrant with FAQ documents
 
 ## Troubleshooting
 
+### Migration/Seed Job Stuck or Never Creates Pods
+
+```bash
+kubectl describe job ai-platform-migrate -n ai-platform
+```
+
+If you see `failed quota: ai-platform-quota: must specify limits.cpu...` the Job containers are missing resource requests/limits. The `ai-platform` namespace has a ResourceQuota that rejects pods without resource specs.
+
+**Fix**: Ensure all containers (including init containers) in `job-migrate.yaml` and `job-seed-qdrant.yaml` have `resources` blocks with `requests` and `limits` for CPU and memory.
+
 ### Pod stuck in `Pending`
 
 ```bash
@@ -1372,10 +1400,11 @@ kubectl describe application ai-platform -n argocd
 ```
 
 Common causes:
-- **Image not found**: The GHCR image hasn't been pushed yet. For local dev, build and load the image:
+- **Image not found or stale**: The GHCR image hasn't been pushed, or KIND has a cached old version. For local dev, rebuild and load into KIND:
   ```bash
-  docker build -t ai-platform:local -f docker/api/Dockerfile .
-  kind load docker-image ai-platform:local --name ai-platform
+  docker build -t ghcr.io/lakunzy7/ai-platform:latest -f docker/api/Dockerfile .
+  kind load docker-image ghcr.io/lakunzy7/ai-platform:latest --name ai-platform
+  kubectl rollout restart deployment/ai-platform-api -n ai-platform
   ```
 - **Helm render error**: Check Helm chart syntax: `helm template ai-platform helm/ai-platform/`
 
@@ -1470,10 +1499,10 @@ Here is everything you deployed, in order:
 | 4 | Ingress | `kubectl apply -f ...nginx...` | Route external traffic |
 | 5 | Namespaces | `kubectl apply -f k8s/namespaces/` | Organize resources |
 | 6 | ArgoCD | `helm upgrade --install ...` | GitOps engine |
-| 7 | Secrets | `kubectl create secret ...` | Store API key securely |
-| 8 | App-of-Apps | `kubectl apply -f app-of-apps.yaml` | Deploy EVERYTHING |
-| 9 | Migrations | `kubectl exec ... alembic ...` | Create database tables |
-| 10 | Seed Qdrant | `python seed_qdrant.py` | Load FAQ documents for RAG |
+| 7 | App-of-Apps | `kubectl apply -f app-of-apps.yaml` | Deploy EVERYTHING |
+| 8 | Seal Secrets | `bash scripts/seal-secret.sh` | Encrypt API key for GitOps |
+| 9 | Migrations | Automated via Helm hook Job | Create database tables |
+| 10 | Seed Qdrant | Automated via Helm hook Job | Load FAQ documents for RAG |
 | 11 | Access | `bash scripts/port-forward.sh` | Reach the app from browser |
 | 12 | Verify | Check Grafana + Prometheus | Confirm monitoring works |
 
