@@ -42,6 +42,8 @@ spec:
           image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
           imagePullPolicy: {{ .Values.api.image.pullPolicy }}
           command:
+            - python
+            - -m
             - alembic
             - -c
             - /app/src/ai_platform/db/alembic.ini
