@@ -40,6 +40,9 @@ kubeconfig
 .DS_Store
 Thumbs.db
 
+# Sealed Secrets certs
+*.pem
+
 # Alembic
 src/ai_platform/db/versions/*.pyc
 .blackboxcli/

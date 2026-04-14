@@ -19,7 +19,7 @@ ll # Kubernetes Deployment Guide — AI Customer Support Platform
 8. [Step 4 — Install the NGINX Ingress Controller](#step-4--install-the-nginx-ingress-controller)
 9. [Step 5 — Create Namespaces and Resource Quotas](#step-5--create-namespaces-and-resource-quotas)
 10. [Step 6 — Install ArgoCD](#step-6--install-argocd)
-11. [Step 7 — Seed Secrets](#step-7--seed-secrets-automated-from-env)
+11. [Step 7 — Secrets Management (Sealed Secrets)](#step-7--secrets-management-sealed-secrets)
 12. [Step 8 — Deploy with App-of-Apps](#step-8--deploy-with-app-of-apps)
 13. [Step 9 — Database Migrations (Automated)](#step-9--database-migrations-automated)
 14. [Step 10 — Seed the Vector Database (Automated)](#step-10--seed-the-vector-database-automated)
@@ -219,19 +219,33 @@ git --version
 
 You need a free Groq API key for the LLM. Sign up at https://console.groq.com and create a key.
 
+### 4.7 kubeseal
+
+`kubeseal` encrypts Kubernetes Secrets into SealedSecrets that are safe to store in Git.
+
+```bash
+KUBESEAL_VERSION="0.27.3"
+curl -sSL "https://github.com/bitnami-labs/sealed-secrets/releases/download/v${KUBESEAL_VERSION}/kubeseal-${KUBESEAL_VERSION}-linux-amd64.tar.gz" | tar xz -C /tmp kubeseal
+sudo mv /tmp/kubeseal /usr/local/bin/
+kubeseal --version
+```
+
+> **Note**: If you use `kind-setup.sh`, it installs `kubeseal` automatically if missing.
+
 ### Verify All Tools
 
 Run this to confirm everything is installed:
 
 ```bash
-echo "Docker:  $(docker --version 2>/dev/null || echo 'NOT FOUND')"
-echo "kubectl: $(kubectl version --client --short 2>/dev/null || echo 'NOT FOUND')"
-echo "kind:    $(kind version 2>/dev/null || echo 'NOT FOUND')"
-echo "helm:    $(helm version --short 2>/dev/null || echo 'NOT FOUND')"
-echo "git:     $(git --version 2>/dev/null || echo 'NOT FOUND')"
+echo "Docker:   $(docker --version 2>/dev/null || echo 'NOT FOUND')"
+echo "kubectl:  $(kubectl version --client --short 2>/dev/null || echo 'NOT FOUND')"
+echo "kind:     $(kind version 2>/dev/null || echo 'NOT FOUND')"
+echo "helm:     $(helm version --short 2>/dev/null || echo 'NOT FOUND')"
+echo "git:      $(git --version 2>/dev/null || echo 'NOT FOUND')"
+echo "kubeseal: $(kubeseal --version 2>/dev/null || echo 'NOT FOUND')"
 ```
 
-All 5 should print a version. If any says "NOT FOUND", go back and install it.
+All 6 should print a version. If any says "NOT FOUND", go back and install it.
 
 ---
 
@@ -505,58 +519,71 @@ kubectl get pods -n argocd
 
 ---
 
-## Step 7 — Seed Secrets (Automated from .env)
+## Step 7 — Secrets Management (Sealed Secrets)
 
-Your API needs the Groq API key to function. This step reads your `.env` file (created in [Step 2](#step-2--get-your-groq-api-key)) and creates a Kubernetes Secret with an `IgnoreExtraneous` annotation so **ArgoCD will never overwrite it**:
+This project uses **Bitnami Sealed Secrets** for true GitOps secret management. Your API key is encrypted client-side and the encrypted YAML is committed to Git. ArgoCD syncs it, and the in-cluster controller decrypts it into a regular Kubernetes Secret.
 
-```bash
-# Read the key from .env
-LLM_KEY=$(grep '^LLM_API_KEY=' .env | cut -d'=' -f2-)
+> **Using `kind-setup.sh`?** Everything below is handled automatically — the script waits for the Sealed Secrets controller, installs `kubeseal`, encrypts your `.env` secret, applies it, and commits to Git. You can skip to [Step 8](#step-8--deploy-with-app-of-apps).
 
-# Create the secret with ArgoCD ignore annotation
-cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: Secret
-metadata:
-  name: ai-platform-secrets
-  namespace: ai-platform
-  annotations:
-    argocd.argoproj.io/compare-options: IgnoreExtraneous
-type: Opaque
-stringData:
-  llm-api-key: "${LLM_KEY}"
-EOF
+### How It Works
+
+```
+.env (plaintext, git-ignored)
+  │
+  ▼  kubeseal encrypts with controller's public key
+k8s/sealed-secrets/ai-platform-secrets.yaml (encrypted, safe for Git)
+  │
+  ▼  ArgoCD syncs to cluster
+SealedSecret resource in Kubernetes
+  │
+  ▼  Sealed Secrets controller decrypts
+ai-platform-secrets (regular K8s Secret)
+  │
+  ▼  API Deployment reads via secretKeyRef
+LLM_API_KEY env var in API pod
 ```
 
-> **Using `kind-setup.sh`?** This step is handled automatically — the script reads your `.env` and seeds the secret for you. You can skip to [Step 8](#step-8--deploy-with-app-of-apps).
+### Manual Sealing (if not using kind-setup.sh)
 
-**What's happening here:**
-1. `grep` extracts the API key from your `.env` file
-2. The Secret is created with `argocd.argoproj.io/compare-options: IgnoreExtraneous` — this tells ArgoCD to **leave this secret alone** and never overwrite it during sync
-3. The Helm chart does **not** create this secret (it's managed externally)
-4. The API Deployment references this secret via `secretKeyRef` in its environment variables
-
-**Why not put the key in Helm values?**
-Secrets should never live in Git. By managing the secret externally (via `kubectl` or a secrets manager), your API key stays on the cluster only — not in your repository.
-
-**Verify:**
+After the cluster is running and ArgoCD has deployed the Sealed Secrets controller:
 
 ```bash
-# Check the secret exists
+# Ensure kubeseal is installed
+kubeseal --version
+
+# Seal the secret from .env
+bash scripts/seal-secret.sh
+```
+
+The script reads your `.env`, fetches the controller's public certificate, encrypts the secret, and writes it to `k8s/sealed-secrets/ai-platform-secrets.yaml`. Commit and push this file — ArgoCD will sync it automatically.
+
+### Verify
+
+```bash
+# Check the SealedSecret exists
+kubectl get sealedsecret -n ai-platform
+
+# Check the decrypted Secret was created
 kubectl get secret ai-platform-secrets -n ai-platform
 
-# Verify the key is NOT empty (should show a non-zero length)
+# Verify the key is NOT empty
 kubectl get secret ai-platform-secrets -n ai-platform \
   -o jsonpath='{.data.llm-api-key}' | base64 -d | wc -c
-# Should be > 0. If it shows 0, your .env file is missing or has an invalid key.
+# Should be > 0
 ```
 
-> **Troubleshooting HTTP 500**: If you get `Error: HTTP 500` when chatting, the #1 cause is an empty or invalid API key. Re-run the command above to reseed the secret, then restart the API pods:
-> ```bash
-> kubectl rollout restart deployment/ai-platform-api -n ai-platform
-> ```
+### Key Rotation
 
-> **Security Note**: The secret is stored encrypted in etcd (Kubernetes' backing store). In production, you would use an external secrets manager (AWS Secrets Manager, HashiCorp Vault, etc.) instead of `kubectl create secret`.
+When you need to update the API key:
+
+1. Update `LLM_API_KEY` in your `.env` file
+2. Run `make seal-secrets` (or `bash scripts/seal-secret.sh`)
+3. Commit and push — ArgoCD auto-syncs the new encrypted secret
+4. Restart API pods: `kubectl rollout restart deployment/ai-platform-api -n ai-platform`
+
+> **Troubleshooting HTTP 500**: If you get `Error: HTTP 500` when chatting, the most likely cause is a missing or invalid API key. Run the verify commands above. If the key length is 0, re-seal from `.env` and push.
+
+> **Security**: The SealedSecret YAML is safe to commit — it can only be decrypted by the controller's private key, which never leaves the cluster. Each KIND cluster generates a unique key pair, so a SealedSecret from one cluster cannot be decrypted by another.
 
 ---
 
@@ -577,9 +604,11 @@ app-of-apps.yaml (parent)
     |
     ├── reads k8s/argocd/apps/ directory in Git
     |
-    ├── ai-platform.yaml ──────> Helm chart → API + PostgreSQL + Redis + Qdrant
-    ├── monitoring.yaml ────────> kube-prometheus-stack → Prometheus + Grafana + Alertmanager
-    └── monitoring-extras.yaml ─> Custom dashboards + alert rules + ServiceMonitor
+    ├── sealed-secrets.yaml ───────────> Bitnami Sealed Secrets controller (kube-system)  [wave -2]
+    ├── sealed-secrets-resources.yaml ──> Encrypted secrets from k8s/sealed-secrets/       [wave -1]
+    ├── ai-platform.yaml ──────────────> Helm chart → API + PostgreSQL + Redis + Qdrant   [wave  0]
+    ├── monitoring.yaml ───────────────> kube-prometheus-stack → Prometheus + Grafana       [wave  0]
+    └── monitoring-extras.yaml ────────> Custom dashboards + alert rules + ServiceMonitor  [wave  0]
 ```
 
 **The parent Application** (`k8s/argocd/app-of-apps.yaml`):
@@ -1286,7 +1315,7 @@ kubectl logs <pod-name> -n ai-platform --previous
 ```
 
 Common causes:
-- **Missing or empty secret**: The `ai-platform-secrets` secret doesn't exist or has an empty `llm-api-key`. Run Step 7 (Seed Secrets) again.
+- **Missing or empty secret**: The `ai-platform-secrets` secret doesn't exist or has an empty `llm-api-key`. Re-seal from `.env`: `make seal-secrets`, then commit and push.
 - **Database not ready**: The API starts before PostgreSQL. Kubernetes will restart it and it should connect on the next attempt.
 - **Invalid API key**: Check that your `.env` has a valid Groq key.
 
