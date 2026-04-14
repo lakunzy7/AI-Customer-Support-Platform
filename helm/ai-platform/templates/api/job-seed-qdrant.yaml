@@ -31,6 +31,13 @@ spec:
                 sleep 2
               done
               echo "Qdrant is ready."
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
       containers:
         - name: seed-qdrant
           image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
@@ -43,4 +50,11 @@ spec:
               value: "{{ .Release.Name }}-qdrant"
             - name: QDRANT_PORT
               value: "6333"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
 {{- end }}
