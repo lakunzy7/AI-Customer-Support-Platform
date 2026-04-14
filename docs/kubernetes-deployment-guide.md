@@ -19,8 +19,8 @@ ll # Kubernetes Deployment Guide — AI Customer Support Platform
 8. [Step 4 — Install the NGINX Ingress Controller](#step-4--install-the-nginx-ingress-controller)
 9. [Step 5 — Create Namespaces and Resource Quotas](#step-5--create-namespaces-and-resource-quotas)
 10. [Step 6 — Install ArgoCD](#step-6--install-argocd)
-11. [Step 7 — Secrets Management (Sealed Secrets)](#step-7--secrets-management-sealed-secrets)
-12. [Step 8 — Deploy with App-of-Apps](#step-8--deploy-with-app-of-apps)
+11. [Step 7 — Deploy with App-of-Apps](#step-7--deploy-with-app-of-apps)
+12. [Step 8 — Seal Secrets (Sealed Secrets)](#step-8--seal-secrets-sealed-secrets)
 13. [Step 9 — Database Migrations (Automated)](#step-9--database-migrations-automated)
 14. [Step 10 — Seed the Vector Database (Automated)](#step-10--seed-the-vector-database-automated)
 15. [Step 11 — Access the Application](#step-11--access-the-application)
@@ -519,77 +519,9 @@ kubectl get pods -n argocd
 
 ---
 
-## Step 7 — Secrets Management (Sealed Secrets)
+## Step 7 — Deploy with App-of-Apps
 
-This project uses **Bitnami Sealed Secrets** for true GitOps secret management. Your API key is encrypted client-side and the encrypted YAML is committed to Git. ArgoCD syncs it, and the in-cluster controller decrypts it into a regular Kubernetes Secret.
-
-> **Using `kind-setup.sh`?** Everything below is handled automatically — the script waits for the Sealed Secrets controller, installs `kubeseal`, encrypts your `.env` secret, applies it, and commits to Git. You can skip to [Step 8](#step-8--deploy-with-app-of-apps).
-
-### How It Works
-
-```
-.env (plaintext, git-ignored)
-  │
-  ▼  kubeseal encrypts with controller's public key
-k8s/sealed-secrets/ai-platform-secrets.yaml (encrypted, safe for Git)
-  │
-  ▼  ArgoCD syncs to cluster
-SealedSecret resource in Kubernetes
-  │
-  ▼  Sealed Secrets controller decrypts
-ai-platform-secrets (regular K8s Secret)
-  │
-  ▼  API Deployment reads via secretKeyRef
-LLM_API_KEY env var in API pod
-```
-
-### Manual Sealing (if not using kind-setup.sh)
-
-After the cluster is running and ArgoCD has deployed the Sealed Secrets controller:
-
-```bash
-# Ensure kubeseal is installed
-kubeseal --version
-
-# Seal the secret from .env
-bash scripts/seal-secret.sh
-```
-
-The script reads your `.env`, fetches the controller's public certificate, encrypts the secret, and writes it to `k8s/sealed-secrets/ai-platform-secrets.yaml`. Commit and push this file — ArgoCD will sync it automatically.
-
-### Verify
-
-```bash
-# Check the SealedSecret exists
-kubectl get sealedsecret -n ai-platform
-
-# Check the decrypted Secret was created
-kubectl get secret ai-platform-secrets -n ai-platform
-
-# Verify the key is NOT empty
-kubectl get secret ai-platform-secrets -n ai-platform \
-  -o jsonpath='{.data.llm-api-key}' | base64 -d | wc -c
-# Should be > 0
-```
-
-### Key Rotation
-
-When you need to update the API key:
-
-1. Update `LLM_API_KEY` in your `.env` file
-2. Run `make seal-secrets` (or `bash scripts/seal-secret.sh`)
-3. Commit and push — ArgoCD auto-syncs the new encrypted secret
-4. Restart API pods: `kubectl rollout restart deployment/ai-platform-api -n ai-platform`
-
-> **Troubleshooting HTTP 500**: If you get `Error: HTTP 500` when chatting, the most likely cause is a missing or invalid API key. Run the verify commands above. If the key length is 0, re-seal from `.env` and push.
-
-> **Security**: The SealedSecret YAML is safe to commit — it can only be decrypted by the controller's private key, which never leaves the cluster. Each KIND cluster generates a unique key pair, so a SealedSecret from one cluster cannot be decrypted by another.
-
----
-
-## Step 8 — Deploy with App-of-Apps
-
-This is the **single most important command** in the entire deployment. It triggers a cascade that deploys everything.
+This is the **single most important command** in the entire deployment. It triggers a cascade that deploys everything — including the Sealed Secrets controller needed for Step 8.
 
 ```bash
 kubectl apply -f k8s/argocd/app-of-apps.yaml
@@ -657,15 +589,107 @@ spec:
 - Deploys files from `monitoring/prometheus/` and `monitoring/grafana/` directly
 - Includes: ServiceMonitor (scrape API metrics), Alert rules, Grafana dashboard
 
-### Wait for Deployment
+### Wait for Sealed Secrets Controller
 
-ArgoCD needs time to pull images and start everything. Wait for the API pods:
+Before you can seal secrets (Step 8), the Sealed Secrets controller must be running. ArgoCD deploys it automatically as part of the App-of-Apps (sync wave `-2`):
 
 ```bash
-# Watch ArgoCD sync (the apps will appear one by one)
-kubectl get applications -n argocd -w
+# Wait until the sealed-secrets controller pod appears (~1-2 minutes)
+kubectl get pods -n kube-system -l app.kubernetes.io/name=sealed-secrets -w
+# Wait until STATUS shows Running and READY shows 1/1, then Ctrl+C
+```
 
-# Wait for the AI platform API to be ready (may take 2-5 minutes)
+> **Note**: The API pods will show `CreateContainerConfigError` at this point — that's expected. They need the secret from Step 8.
+
+### Verify All Apps
+
+```bash
+kubectl get applications -n argocd
+# Expected: sealed-secrets=Healthy, sealed-secrets-resources=Healthy,
+#           ai-platform=Progressing (waiting for secret), monitoring=Healthy
+
+kubectl get pods -n monitoring
+# Expected: ~8-10 pods (prometheus, grafana, alertmanager, operator, exporters)
+```
+
+---
+
+## Step 8 — Seal Secrets (Sealed Secrets)
+
+This project uses **Bitnami Sealed Secrets** for true GitOps secret management. Your API key is encrypted client-side with `kubeseal`, and the encrypted YAML is committed to Git. ArgoCD syncs it, and the in-cluster controller decrypts it into a regular Kubernetes Secret.
+
+> **Using `kind-setup.sh`?** This step is handled automatically. You can skip to [Step 9](#step-9--database-migrations-automated).
+
+### How It Works
+
+```
+.env (plaintext, git-ignored)
+  │
+  ▼  kubeseal encrypts with controller's public key
+k8s/sealed-secrets/ai-platform-secrets.yaml (encrypted, safe for Git)
+  │
+  ▼  ArgoCD syncs to cluster
+SealedSecret resource in Kubernetes
+  │
+  ▼  Sealed Secrets controller decrypts
+ai-platform-secrets (regular K8s Secret)
+  │
+  ▼  API Deployment reads via secretKeyRef
+LLM_API_KEY env var in API pod
+```
+
+### Seal Your Secret
+
+**Option A — Use the helper script:**
+
+```bash
+bash scripts/seal-secret.sh
+```
+
+**Option B — Run the commands manually:**
+
+```bash
+# 1. Fetch the controller's public certificate
+kubeseal --fetch-cert \
+  --controller-name=sealed-secrets-controller \
+  --controller-namespace=kube-system \
+  > /tmp/cert.pem
+
+# 2. Read your API key from .env and create an encrypted SealedSecret
+LLM_KEY=$(grep '^LLM_API_KEY=' .env | cut -d'=' -f2-)
+
+kubectl create secret generic ai-platform-secrets \
+  --namespace=ai-platform \
+  --from-literal=llm-api-key="${LLM_KEY}" \
+  --dry-run=client -o yaml | \
+kubeseal --cert /tmp/cert.pem --format yaml \
+  > k8s/sealed-secrets/ai-platform-secrets.yaml
+
+# 3. Apply it to the cluster (immediate effect)
+kubectl apply -f k8s/sealed-secrets/ai-platform-secrets.yaml
+
+# 4. Commit and push so ArgoCD can sync it on future deploys
+git add k8s/sealed-secrets/ai-platform-secrets.yaml
+git commit -m "chore: seal ai-platform-secrets for current cluster"
+git push
+
+# 5. Clean up
+rm /tmp/cert.pem
+```
+
+**What's happening:**
+1. `kubeseal --fetch-cert` downloads the controller's public key from the cluster
+2. `kubectl create secret ... --dry-run` generates a plain Secret YAML without applying it
+3. `kubeseal --cert` encrypts it — only the controller's private key (in-cluster) can decrypt it
+4. The encrypted YAML is safe to commit to Git
+5. ArgoCD syncs it → controller decrypts → API pods read the secret
+
+### Wait for API Pods
+
+After the secret is created, the API pods will start automatically:
+
+```bash
+# Wait for the API to be ready
 kubectl wait --for=condition=ready pod \
   -l app.kubernetes.io/name=ai-platform,app.kubernetes.io/component=api \
   -n ai-platform --timeout=300s
@@ -682,13 +706,35 @@ kubectl get pods -n ai-platform
 # ai-platform-postgresql-0           1/1     Running   0          2m
 # ai-platform-redis-xxxxxxxxxx-zzz   1/1     Running   0          2m
 # ai-platform-qdrant-0               1/1     Running   0          2m
-
-kubectl get pods -n monitoring
-# Expected: ~8-10 pods (prometheus, grafana, alertmanager, operator, exporters)
-
-kubectl get pods -n argocd
-# Expected: 5-7 ArgoCD pods all Running
 ```
+
+### Verify the Secret
+
+```bash
+# Check the SealedSecret exists
+kubectl get sealedsecret -n ai-platform
+
+# Check the decrypted Secret was created
+kubectl get secret ai-platform-secrets -n ai-platform
+
+# Verify the key is NOT empty
+kubectl get secret ai-platform-secrets -n ai-platform \
+  -o jsonpath='{.data.llm-api-key}' | base64 -d | wc -c
+# Should be > 0 (e.g., 56)
+```
+
+### Key Rotation
+
+When you need to update the API key:
+
+1. Update `LLM_API_KEY` in your `.env` file
+2. Run `make seal-secrets` (or `bash scripts/seal-secret.sh`)
+3. Commit and push — ArgoCD auto-syncs the new encrypted secret
+4. Restart API pods: `kubectl rollout restart deployment/ai-platform-api -n ai-platform`
+
+> **Troubleshooting HTTP 500**: If you get `Error: HTTP 500` when chatting, the most likely cause is a missing or invalid API key. Run the verify commands above. If the key length is 0, re-seal from `.env` and push.
+
+> **Security**: The SealedSecret YAML is safe to commit — it can only be decrypted by the controller's private key, which never leaves the cluster. Each KIND cluster generates a unique key pair, so a SealedSecret from one cluster cannot be decrypted by another.
 
 ---
 
